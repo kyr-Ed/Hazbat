@@ -1278,10 +1278,6 @@ def traceability_graph():
 def graph_page(request: Request):
     return templates.TemplateResponse("graph.html", {"request": request})
 
-@app.get("/graph", response_class=HTMLResponse)
-def graph_page(request: Request):
-    return templates.TemplateResponse("graph.html", {"request": request})
-
 @app.get("/api/chart/coatings-over-time")
 def chart_coatings_over_time():
     conn = get_connection()

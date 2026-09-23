@@ -48,23 +48,62 @@
         document.getElementById('nodeCard').style.display = 'none';
         if (pulseInterval) clearInterval(pulseInterval);
         edgesDS.forEach(e => edgesDS.update({ id: e.id, color: { color: 'rgba(120,140,200,0.35)' }, width: 1.5 }));
-        nodesDS.forEach(n => nodesDS.update({ id: n.id, borderWidth: 2 }));
+        nodesDS.forEach(node => setNodeStyle(node, true));
     }
 
+    const groupColors = {
+            material: { background: '#00e5ff', border: '#00b8cc' },
+            coating:  { background: '#7c4dff', border: '#5c35cc' },
+            slp:      { background: '#00ff9d', border: '#00cc7d' },
+            coincell: { background: '#ff6ec7', border: '#cc5599' },
+            mlp:      { background: '#ffb800', border: '#cc9300' },
+            project:  { background: '#ffffff', border: '#888888' }
+            };
+
+    // Assign level to groups for easier understanding
+    const groupLevels = {
+            material: 0,
+            coating: 1,
+            slp: 2,
+            coincell: 2,
+            mlp: 2,
+            project: 3
+    };
+
+    //dimmer to unselected nodes?
+
+    function rgba(hex, opacity) {
+        const value = parseInt(hex.slice(1), 16);
+        return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${opacity})`;
+    }
+
+    function setNodeStyle(node, isOnPath) {
+        const colors = groupColors[node.group];
+        nodesDS.update({
+            id: node.id,
+            borderWidth: isOnPath ? 4 : 1,
+            color: isOnPath
+                ? { background: colors.background, border: colors.border }
+                : { background: rgba(colors.background, 0.12), border: rgba(colors.border, 0.18) },
+            font: {
+                color: isOnPath ? '#e8e8f0' : 'rgba(232,232,240,0.22)',
+                size: node.group === 'project' ? 14 : 12,
+                bold: node.group === 'project'
+            },
+            shadow: isOnPath
+                ? { enabled: true, color: colors.background, size: 10, x: 0, y: 0 }
+                : { enabled: false }
+        });
+    }
+
+    
     fetch('/api/graph')
         .then(res => res.json())
         .then(data => {
-            const groupColors = {
-                material: { background: '#00e5ff', border: '#00b8cc' },
-                coating:  { background: '#7c4dff', border: '#5c35cc' },
-                slp:      { background: '#00ff9d', border: '#00cc7d' },
-                coincell: { background: '#ff6ec7', border: '#cc5599' },
-                mlp:      { background: '#ffb800', border: '#cc9300' },
-                project:  { background: '#ffffff', border: '#888888' }
-            };
-
+            
             nodesDS = new vis.DataSet(data.nodes.map(n => ({
                 ...n,
+                level: groupLevels[n.group],   // force same-group vertical alignment
                 label: shortLabel(n.id, n.group),
                 title: n.id + (n.title ? ' — ' + n.title : ''),
                 shape: 'dot',
@@ -84,7 +123,7 @@
             })));
 
             network = new vis.Network(document.getElementById('network'), { nodes: nodesDS, edges: edgesDS }, {
-                layout: { hierarchical: { direction: 'UD', sortMethod: 'directed', levelSeparation: 130, nodeSpacing: 55 } },
+                layout: { hierarchical: { direction: 'UD', sortMethod: 'hubsize', levelSeparation: 130, nodeSpacing: 55 } },
                 physics: { hierarchicalRepulsion: { nodeDistance: 85 } },
                 interaction: { hover: true, tooltipDelay: 100 }
             });
@@ -101,7 +140,8 @@
 
                 // Reset all edges/nodes first
                 edgesDS.forEach(e => edgesDS.update({ id: e.id, color: { color: 'rgba(120,140,200,0.35)' }, width: 1.5 }));
-                nodesDS.forEach(n => nodesDS.update({ id: n.id, borderWidth: 2 }));
+                // nodesDS.forEach(n => nodesDS.update({ id: n.id, borderWidth: 2 }));
+                nodesDS.forEach(node => setNodeStyle(node, true));
 
                 // Trace the manufacturing path back to its root material
                 const allEdges = edgesDS.get();
@@ -113,7 +153,10 @@
                 }
 
                 // Highlight the path nodes
-                path.forEach(id => nodesDS.update({ id, borderWidth: 4 }));
+                // path.forEach(id => nodesDS.update({ id, borderWidth: 4 }));
+                // dimmer?
+                const selectedPath = new Set(path);
+                nodesDS.forEach(node => setNodeStyle(node, selectedPath.has(node.id)));
 
                 // Pulsing animation along the path edges
                 let bright = false;
