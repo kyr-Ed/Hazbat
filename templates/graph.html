@@ -81,6 +81,7 @@
     }
 
     function clearSelection() {
+        currentSelectedPath = null;
         document.getElementById('nodeCard').style.display = 'none';
         if (pulseInterval) clearInterval(pulseInterval);
         edgesDS.forEach(e => edgesDS.update({ id: e.id, color: { color: 'rgba(120,140,200,0.35)' }, width: 1.5 }));
@@ -186,6 +187,8 @@
                 interaction: { hover: true, tooltipDelay: 100 }
             });
 
+            network.on('zoom', onZoom);
+
             network.on("click", async function(params) {
                 if (pulseInterval) clearInterval(pulseInterval);
 
@@ -208,7 +211,8 @@
                 // Include the upstream path and every downstream traceability node.
                 const downstreamNodes = findDescendants(nodeId, allEdges);
                 const selectedPath = new Set([...path, ...downstreamNodes]);
-
+                currentSelectedPath = selectedPath
+                
                 // Highlight all real edges within the selected traceability branch.
                 const pathEdgeIds = allEdges
                     .filter(edge =>
