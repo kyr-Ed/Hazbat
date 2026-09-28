@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ slp.slp_id }} — BMAC{% endblock %}
+{% block content %}
+<h1>Edit SLP Cell</h1>
+<p style="color: #999; font-size: 14px;">{{ slp.slp_id }}</p>
+
+<form method="post" action="/slp/{{ slp.slp_id }}/edit" style="max-width: 420px;">
+    <label>Made By</label>
+    <input type="text" name="made_by" value="{{ slp.made_by }}" required>
+
+    <label>Electrolyte</label>
+    <input type="text" name="electrolyte" value="{{ slp.electrolyte or '' }}">
+
+    <label>Formation Capacity</label>
+    <input type="text" name="formation_capacity" value="{{ slp.formation_capacity or '' }}">
+
+    <button type="submit">Save Changes</button>
+</form>
+
+{% if request.session.get('is_admin') %}
+<form method="post" action="/slp/{{ slp.slp_id }}/delete" style="margin-top: 20px;"
+      onsubmit="return confirm('Delete {{ slp.slp_id }}? This cannot be undone.');">
+    <button type="submit" style="background: #c62828;">Delete SLP Cell</button>
+</form>
+{% endif %}
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+{% endblock %}

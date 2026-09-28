@@ -29,4 +29,47 @@
         <p style="font-size: 11px; color: #999; margin-top: 8px;">Scan to open this card</p>
     </div>
 </div>
+<div id="cyclingSection" style="display:none; margin-top: 24px;">
+    <div class="result">
+        <h4>Cycling Data</h4>
+        <canvas id="cyclingChart"></canvas>
+    </div>
+</div>
+
+<script>
+    fetch(`/api/cycling/{{ record_id }}`)
+        .then(res => {
+            if (!res.ok) throw new Error('No cycling data');
+            return res.json();
+        })
+        .then(data => {
+            document.getElementById('cyclingSection').style.display = 'block';
+            new Chart(document.getElementById('cyclingChart'), {
+                type: 'line',
+                data: {
+                    labels: data.capacity_mah.map((_, i) => i),
+                    datasets: [{
+                        label: 'Voltage (V) vs Capacity (mAh)',
+                        data: data.voltage_v,
+                        borderColor: '#2e5fa3',
+                        backgroundColor: 'rgba(46,95,163,0.08)',
+                        fill: true,
+                        tension: 0.1,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: true } },
+                    scales: {
+                        x: { title: { display: true, text: 'Sample index' } },
+                        y: { title: { display: true, text: 'Voltage (V)' } }
+                    }
+                }
+            });
+        })
+        .catch(() => {
+    // No cycling data for this record — section stays hidden
+});
+</script>
 {% endblock %}

@@ -29,6 +29,23 @@
 
     let network, nodesDS, edgesDS, pulseInterval;
 
+    // --- Border scaling state ---
+    // borderWidth in vis.js is in screen pixels; node size scales with zoom.
+    // We track the current scale and re-apply borders on every zoom event so
+    // the border thickness stays visually proportional to the node size.
+    let currentScale = 1;
+
+    // null  → no selection active (all nodes at normal style)
+    // Set   → active selection; contains IDs on the highlighted path
+    let currentSelectedPath = null;
+
+    // Base border widths at scale 1. Multiplied by currentScale when applied.
+    const BASE_BORDER = {
+        normal:   2,   // no selection active
+        selected: 4,   // on the highlighted path
+        dimmed:   1    // off the highlighted path
+    };
+
     function findPathToRoot(targetId, edges) {
         // Walk backwards through edges (child -> parent) until no parent found.
         // Excludes dashed project-reference edges — only follows real traceability links.
@@ -44,7 +61,27 @@
         return path;
     }
 
+    function findDescendants(startId, edges) {
+        // Follow real traceability links forward, from parent to child.
+        const descendants = new Set([startId]);
+        const queue = [startId];
+
+        while (queue.length) {
+            const current = queue.shift();
+            edges
+                .filter(edge => edge.from === current && !edge.dashes)
+                .forEach(edge => {
+                    if (!descendants.has(edge.to)) {
+                        descendants.add(edge.to);
+                        queue.push(edge.to);
+                    }
+                });
+        }
+        return descendants;
+    }
+
     function clearSelection() {
+        currentSelectedPath = null;
         document.getElementById('nodeCard').style.display = 'none';
         if (pulseInterval) clearInterval(pulseInterval);
         edgesDS.forEach(e => edgesDS.update({ id: e.id, color: { color: 'rgba(120,140,200,0.35)' }, width: 1.5 }));
@@ -70,18 +107,25 @@
             project: 3
     };
 
-    //dimmer to unselected nodes?
 
     function rgba(hex, opacity) {
         const value = parseInt(hex.slice(1), 16);
         return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${opacity})`;
     }
 
+    // isOnPath = true  → node is highlighted (or no selection is active, i.e. normal state)
+    // isOnPath = false → node is dimmed because it is off the selected path
     function setNodeStyle(node, isOnPath) {
         const colors = groupColors[node.group];
+
+        // Scale the border so it remains proportional to node size at any zoom level.
+        const border = isOnPath
+            ? BASE_BORDER.selected * currentScale
+            : BASE_BORDER.dimmed   * currentScale;
+        
         nodesDS.update({
             id: node.id,
-            borderWidth: isOnPath ? 4 : 1,
+            borderWidth: border,
             color: isOnPath
                 ? { background: colors.background, border: colors.border }
                 : { background: rgba(colors.background, 0.12), border: rgba(colors.border, 0.18) },
@@ -96,6 +140,21 @@
         });
     }
 
+     // Called on every zoom event. Re-applies the correct style (with updated
+    // scale) to every node, respecting the current selection state.
+    function onZoom(params) {
+        currentScale = params.scale;
+        if (currentSelectedPath !== null) {
+            // Selection is active — re-apply highlight/dim with new border sizes.
+            nodesDS.forEach(node => setNodeStyle(node, currentSelectedPath.has(node.id)));
+        } else {
+            // No selection — update all nodes to normal border width only.
+            nodesDS.forEach(n => nodesDS.update({
+                id: n.id,
+                borderWidth: BASE_BORDER.normal * currentScale
+            }));
+        }
+    }
     
     fetch('/api/graph')
         .then(res => res.json())
@@ -128,6 +187,8 @@
                 interaction: { hover: true, tooltipDelay: 100 }
             });
 
+            network.on('zoom', onZoom);
+
             network.on("click", async function(params) {
                 if (pulseInterval) clearInterval(pulseInterval);
 
@@ -146,16 +207,22 @@
                 // Trace the manufacturing path back to its root material
                 const allEdges = edgesDS.get();
                 const path = findPathToRoot(nodeId, allEdges);
-                const pathEdgeIds = [];
-                for (let i = 0; i < path.length - 1; i++) {
-                    const edge = allEdges.find(e => e.from === path[i] && e.to === path[i + 1]);
-                    if (edge) pathEdgeIds.push(edge.id);
-                }
 
-                // Highlight the path nodes
-                // path.forEach(id => nodesDS.update({ id, borderWidth: 4 }));
-                // dimmer?
-                const selectedPath = new Set(path);
+                // Include the upstream path and every downstream traceability node.
+                const downstreamNodes = findDescendants(nodeId, allEdges);
+                const selectedPath = new Set([...path, ...downstreamNodes]);
+                currentSelectedPath = selectedPath
+                
+                // Highlight all real edges within the selected traceability branch.
+                const pathEdgeIds = allEdges
+                    .filter(edge =>
+                        !edge.dashes &&
+                        selectedPath.has(edge.from) &&
+                        selectedPath.has(edge.to)
+                    )
+                    .map(edge => edge.id);
+
+                // Brighten selected/upstream/downstream nodes and dim all others.
                 nodesDS.forEach(node => setNodeStyle(node, selectedPath.has(node.id)));
 
                 // Pulsing animation along the path edges
@@ -184,5 +251,111 @@
                 document.getElementById('nodeCard').style.display = 'block';
             });
         });
+</script>
+<div style="margin-top: 40px;">
+    <div class="result">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+            <h3 style="margin: 0;">Cycling Data</h3>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <input type="text" id="cyclingRecordId" placeholder="Record ID e.g. CAT-NMC-001-C001-CC-01" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #dde2ee; font-size: 13px; width: 240px;">
+                <select id="cyclingChartType" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #dde2ee; font-size: 13px;">
+                    <option value="voltage-capacity">Voltage vs Capacity</option>
+                    <option value="capacity-fade">Capacity vs Cycle</option>
+                    <option value="efficiency">Coulombic Efficiency vs Cycle</option>
+                </select>
+                <select id="cyclePicker" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #dde2ee; font-size: 13px; display: none;">
+                </select>
+                <button id="loadCyclingBtn" style="margin: 0; padding: 8px 16px;">Load</button>
+            </div>
+        </div>
+        <p id="cyclingStatus" style="font-size: 13px; color: #999; margin: 0 0 10px;"></p>
+        <canvas id="cyclingGraphChart"></canvas>
+    </div>
+</div>
+
+<script>
+    let cyclingChart = null;
+    let currentSummary = null;
+
+    document.getElementById('cyclingChartType').addEventListener('change', (e) => {
+        document.getElementById('cyclePicker').style.display = e.target.value === 'voltage-capacity' ? 'inline-block' : 'none';
+    });
+
+    async function loadCyclingSummary(recordId) {
+        const res = await fetch(`/api/cycling/${recordId}/summary`);
+        if (!res.ok) throw new Error('No cycling data found for this record');
+        return await res.json();
+    }
+
+    async function loadSingleCycle(recordId, cycleNum) {
+        const res = await fetch(`/api/cycling/${recordId}/cycle/${cycleNum}`);
+        if (!res.ok) throw new Error('Could not load that cycle');
+        return await res.json();
+    }
+
+    function renderChart(type, labels, values, label, xTitle, yTitle) {
+        if (cyclingChart) cyclingChart.destroy();
+        cyclingChart = new Chart(document.getElementById('cyclingGraphChart'), {
+            type: type,
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: label,
+                    data: values,
+                    borderColor: '#2e5fa3',
+                    backgroundColor: type === 'line' ? 'rgba(46,95,163,0.08)' : '#2e5fa3',
+                    fill: type === 'line',
+                    tension: 0.1,
+                    pointRadius: type === 'line' && values.length > 200 ? 0 : 3
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: true } },
+                scales: {
+                    x: { title: { display: true, text: xTitle } },
+                    y: { title: { display: true, text: yTitle } }
+                }
+            }
+        });
+    }
+
+    document.getElementById('loadCyclingBtn').addEventListener('click', async () => {
+        const recordId = document.getElementById('cyclingRecordId').value.trim().toUpperCase();
+        const chartType = document.getElementById('cyclingChartType').value;
+        const status = document.getElementById('cyclingStatus');
+        if (!recordId) { status.textContent = 'Enter a record ID first.'; return; }
+
+        status.textContent = 'Loading...';
+        try {
+            currentSummary = await loadCyclingSummary(recordId);
+
+            if (chartType === 'capacity-fade') {
+                renderChart('bar', currentSummary.cycles, currentSummary.capacity_per_cycle, 'Capacity (mAh)', 'Half-cycle', 'Capacity (mAh)');
+                status.textContent = `${currentSummary.cycles.length} half-cycles loaded for ${recordId}.`;
+
+            } else if (chartType === 'efficiency') {
+                renderChart('line', currentSummary.efficiency_cycle_numbers, currentSummary.efficiency, 'Coulombic Efficiency (%)', 'Cycle', 'Efficiency (%)');
+                status.textContent = `${currentSummary.efficiency.length} cycle pairs analysed for ${recordId}.`;
+
+            } else if (chartType === 'voltage-capacity') {
+                const picker = document.getElementById('cyclePicker');
+                picker.innerHTML = currentSummary.cycles.map(c => `<option value="${c}">Half-cycle ${c}</option>`).join('');
+                picker.style.display = 'inline-block';
+                const firstCycle = currentSummary.cycles[0];
+                const cycleData = await loadSingleCycle(recordId, firstCycle);
+                renderChart('line', cycleData.capacity_mah.map((_, i) => i), cycleData.voltage_v, `Half-cycle ${firstCycle}`, 'Sample index', 'Voltage (V)');
+                status.textContent = `Showing half-cycle ${firstCycle} of ${currentSummary.cycles.length} for ${recordId}.`;
+
+                picker.onchange = async () => {
+                    const cycleData = await loadSingleCycle(recordId, picker.value);
+                    renderChart('line', cycleData.capacity_mah.map((_, i) => i), cycleData.voltage_v, `Half-cycle ${picker.value}`, 'Sample index', 'Voltage (V)');
+                    status.textContent = `Showing half-cycle ${picker.value} of ${currentSummary.cycles.length} for ${recordId}.`;
+                };
+            }
+        } catch (err) {
+            status.textContent = err.message;
+        }
+    });
 </script>
 {% endblock %}

@@ -10,6 +10,6 @@ openpyxl==3.1.5
 bcrypt==4.2.0
 itsdangerous==2.2.0
 qrcode[pil]==7.4.2
-python-dotenv==1.0.1
 requests==2.32.3
 pymatgen
+galvani  # reads BioLogic .mpr cycling files

@@ -1,25 +1,61 @@
 {% extends "base.html" %}
 {% block title %}New SLP Cell — BMAC{% endblock %}
 {% block content %}
+{% set f = form or {} %}
 <h1>New SLP Cell</h1>
 <form method="post" action="/slp/new">
-    <label>SLP ID</label>
-    <input type="text" name="slp_id" placeholder="e.g. CAT-NMC-001-C001-SLP-02" required>
+    <fieldset class="form-section">
+        <legend>Required</legend>
+        <div class="field">
+            <label for="slp_id">SLP ID</label>
+            <input type="text" id="slp_id" name="slp_id" placeholder="e.g. CAT-NMC-001-C001-SLP-02" value="{{ f.get("slp_id", "") }}" required>
+        </div>
+        <div class="field">
+            <label for="coating_id">Coating ID</label>
+            <input type="text" id="coating_id" name="coating_id" list="coatings-list" autocomplete="off" placeholder="Start typing to search…" value="{{ f.get("coating_id", "") }}" required>
+            <datalist id="coatings-list">{% for o in coatings %}<option value="{{ o.id }}">{{ o.label }}</option>{% endfor %}</datalist>
+            {% if not coatings %}<p class="hint">No coatings yet. <a href="/coatings/new">Create one first</a>.</p>{% endif %}
+        </div>
+        <div class="field">
+            <label for="project">Project</label>
+            <select id="project" name="project" required>
+                <option value="" disabled {% if not f.get("project") %}selected{% endif %}>Choose a project…</option>
+                {% for p in projects %}<option value="{{ p }}" {% if f.get("project") == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="made_by">Made By</label>
+            <input type="text" id="made_by" name="made_by" value="{{ f.get("made_by", "") }}" required>
+        </div>
+    </fieldset>
 
-    <label>Coating ID</label>
-    <input type="text" name="coating_id" placeholder="Must already exist" required>
-
-    <label>Project</label>
-    <input type="text" name="project" required>
-
-    <label>Made By</label>
-    <input type="text" name="made_by" required>
-
-    <label>Formation Capacity (mAh)</label>
-    <input type="number" step="0.1" name="formation_capacity">
+    <fieldset class="form-section">
+        <legend>Details <span class="optional">optional — fill in what you know</span></legend>
+        <div class="form-grid">
+        <div class="field">
+            <label for="date_made">Date Made</label>
+            <input type="date" id="date_made" name="date_made" value="{{ f.get("date_made", "") }}">
+        </div>
+        <div class="field">
+            <label for="electrolyte">Electrolyte</label>
+            <input type="text" id="electrolyte" name="electrolyte" placeholder="e.g. 1 M LiPF6 in EC:EMC 3:7" value="{{ f.get("electrolyte", "") }}">
+        </div>
+        <div class="field">
+            <label for="formation_capacity">Formation Capacity (mAh)</label>
+            <input type="number" id="formation_capacity" name="formation_capacity" step="any" min="0" placeholder="e.g. 118.9" value="{{ f.get("formation_capacity", "") }}">
+        </div>
+        <div class="field">
+            <label for="np_ratio">N/P Ratio</label>
+            <input type="number" id="np_ratio" name="np_ratio" step="any" min="0" placeholder="e.g. 1.10" value="{{ f.get("np_ratio", "") }}">
+        </div>
+        <div class="field field-wide">
+            <label for="notes">Notes</label>
+            <textarea id="notes" name="notes" rows="3">{{ f.get("notes", "") }}</textarea>
+        </div>
+        </div>
+    </fieldset>
 
     <button type="submit">Create SLP Cell</button>
-
 </form>
 
 {% if error %}<p class="error">{{ error }}</p>{% endif %}

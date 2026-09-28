@@ -1,19 +1,57 @@
 {% extends "base.html" %}
 {% block title %}New MLP Cell — BMAC{% endblock %}
 {% block content %}
+{% set f = form or {} %}
 <h1>New MLP Cell</h1>
 <form method="post" action="/mlp/new">
-    <label>MLP ID</label>
-    <input type="text" name="mlp_id" placeholder="e.g. MLP-0002" required>
+    <fieldset class="form-section">
+        <legend>Required</legend>
+        <div class="field">
+            <label for="mlp_id">MLP ID</label>
+            <input type="text" id="mlp_id" name="mlp_id" placeholder="e.g. MLP-0002" value="{{ f.get("mlp_id", "") }}" required>
+        </div>
+        <div class="field">
+            <label for="cat_coating_id">Cathode Coating ID</label>
+            <input type="text" id="cat_coating_id" name="cat_coating_id" list="cat-coatings-list" autocomplete="off" placeholder="Start typing to search…" value="{{ f.get("cat_coating_id", "") }}" required>
+            <datalist id="cat-coatings-list">{% for o in cat_coatings %}<option value="{{ o.id }}">{{ o.label }}</option>{% endfor %}</datalist>
+            {% if not cat_coatings %}<p class="hint">No cathode (CAT-) coatings yet. <a href="/coatings/new">Create one first</a>.</p>{% endif %}
+        </div>
+        <div class="field">
+            <label for="an_coating_id">Anode Coating ID</label>
+            <input type="text" id="an_coating_id" name="an_coating_id" list="an-coatings-list" autocomplete="off" placeholder="Start typing to search…" value="{{ f.get("an_coating_id", "") }}" required>
+            <datalist id="an-coatings-list">{% for o in an_coatings %}<option value="{{ o.id }}">{{ o.label }}</option>{% endfor %}</datalist>
+            {% if not an_coatings %}<p class="hint">No anode (AN-) coatings yet. <a href="/coatings/new">Create one first</a>.</p>{% endif %}
+        </div>
+        <div class="field">
+            <label for="project">Project</label>
+            <select id="project" name="project" required>
+                <option value="" disabled {% if not f.get("project") %}selected{% endif %}>Choose a project…</option>
+                {% for p in projects %}<option value="{{ p }}" {% if f.get("project") == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+            </select>
+        </div>
+    </fieldset>
 
-    <label>Cathode Coating ID</label>
-    <input type="text" name="cat_coating_id" placeholder="Must already exist" required>
-
-    <label>Anode Coating ID</label>
-    <input type="text" name="an_coating_id" placeholder="Must already exist" required>
-
-    <label>Project</label>
-    <input type="text" name="project" required>
+    <fieldset class="form-section">
+        <legend>Details <span class="optional">optional — fill in what you know</span></legend>
+        <div class="form-grid">
+        <div class="field">
+            <label for="date_made">Date Made</label>
+            <input type="date" id="date_made" name="date_made" value="{{ f.get("date_made", "") }}">
+        </div>
+        <div class="field">
+            <label for="electrolyte">Electrolyte</label>
+            <input type="text" id="electrolyte" name="electrolyte" placeholder="e.g. 1 M LiPF6 in EC:EMC 3:7" value="{{ f.get("electrolyte", "") }}">
+        </div>
+        <div class="field">
+            <label for="cell_capacity">Cell Capacity</label>
+            <input type="number" id="cell_capacity" name="cell_capacity" step="any" min="0" value="{{ f.get("cell_capacity", "") }}">
+        </div>
+        <div class="field">
+            <label for="ac_area_ratio">A/C Area Ratio</label>
+            <input type="number" id="ac_area_ratio" name="ac_area_ratio" step="any" min="0" placeholder="e.g. 1.05" value="{{ f.get("ac_area_ratio", "") }}">
+        </div>
+        </div>
+    </fieldset>
 
     <button type="submit">Create MLP Cell</button>
 </form>

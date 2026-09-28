@@ -1,19 +1,55 @@
 {% extends "base.html" %}
 {% block title %}New Coating — BMAC{% endblock %}
 {% block content %}
+{% set f = form or {} %}
 <h1>New Coating</h1>
 <form method="post" action="/coatings/new">
-    <label>Coating ID</label>
-    <input type="text" name="coating_id" placeholder="e.g. CAT-NMC-001-C002" required>
+    <fieldset class="form-section">
+        <legend>Required</legend>
+        <div class="field">
+            <label for="coating_id">Coating ID</label>
+            <input type="text" id="coating_id" name="coating_id" placeholder="e.g. CAT-NMC-001-C002" value="{{ f.get("coating_id", "") }}" required>
+        </div>
+        <div class="field">
+            <label for="material_id">Material ID</label>
+            <input type="text" id="material_id" name="material_id" list="materials-list" autocomplete="off" placeholder="Start typing to search…" value="{{ f.get("material_id", "") }}" required>
+            <datalist id="materials-list">{% for o in materials %}<option value="{{ o.id }}">{{ o.label }}</option>{% endfor %}</datalist>
+            {% if not materials %}<p class="hint">No materials yet. <a href="/materials/new">Create one first</a>.</p>{% endif %}
+        </div>
+        <div class="field">
+            <label for="project">Project</label>
+            <select id="project" name="project" required>
+                <option value="" disabled {% if not f.get("project") %}selected{% endif %}>Choose a project…</option>
+                {% for p in projects %}<option value="{{ p }}" {% if f.get("project") == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="made_by">Made By</label>
+            <input type="text" id="made_by" name="made_by" value="{{ f.get("made_by", "") }}" required>
+        </div>
+    </fieldset>
 
-    <label>Material ID</label>
-    <input type="text" name="material_id" placeholder="Must already exist" required>
-
-    <label>Project</label>
-    <input type="text" name="project" required>
-
-    <label>Made By</label>
-    <input type="text" name="made_by" required>
+    <fieldset class="form-section">
+        <legend>Details <span class="optional">optional — fill in what you know</span></legend>
+        <div class="form-grid">
+        <div class="field">
+            <label for="coating_date">Coating Date</label>
+            <input type="date" id="coating_date" name="coating_date" value="{{ f.get("coating_date", "") }}">
+        </div>
+        <div class="field">
+            <label for="coat_weight_gsm">Coat Weight (g/m²)</label>
+            <input type="number" id="coat_weight_gsm" name="coat_weight_gsm" step="any" min="0" placeholder="e.g. 145" value="{{ f.get("coat_weight_gsm", "") }}">
+        </div>
+        <div class="field">
+            <label for="porosity">Porosity</label>
+            <input type="number" id="porosity" name="porosity" step="any" min="0" placeholder="e.g. 35" value="{{ f.get("porosity", "") }}">
+        </div>
+        <div class="field field-wide">
+            <label for="notes">Notes</label>
+            <textarea id="notes" name="notes" rows="3" placeholder="Mixer, slurry recipe, calendering, defects…">{{ f.get("notes", "") }}</textarea>
+        </div>
+        </div>
+    </fieldset>
 
     <button type="submit">Create Coating</button>
 </form>

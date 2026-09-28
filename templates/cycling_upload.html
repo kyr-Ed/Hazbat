@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Upload Cycling Data — BMAC{% endblock %}
+{% block content %}
+<h1>Upload Cycling Data</h1>
+<p style="color: #999; font-size: 14px;">Upload a Biologic .mpr file and attach it to a cell record.</p>
+
+<form method="post" action="/cycling/upload" enctype="multipart/form-data" style="max-width: 420px;">
+    <label>Record ID</label>
+    <input type="text" name="record_id" placeholder="e.g. CAT-NMC-001-C101-CC01" required>
+
+    <label>File (.mpr)</label>
+    <input type="file" name="file" accept=".mpr" required>
+
+    <button type="submit">Upload</button>
+</form>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+{% endblock %}

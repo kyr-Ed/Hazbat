@@ -2,20 +2,27 @@
 {% block title %}Bulk Upload Coatings — BMAC{% endblock %}
 {% block content %}
 <h1>Bulk Upload Coatings</h1>
-<p>Upload a CSV or Excel file with columns: <strong>coating_id, material_id, project, made_by</strong></p>
+<p>Upload a CSV or Excel file with a header row.</p>
+<p><strong>Required columns:</strong> <code>coating_id</code>, <code>material_id</code>, <code>project</code>, <code>made_by</code></p>
+<p><strong>Optional columns:</strong> <code>coating_date</code>, <code>coat_weight_gsm (or GSM)</code>, <code>porosity</code>, <code>notes</code></p>
+<p class="hint">Column names aren't case-sensitive. Leave a cell blank, or write <code>N/A</code> or <code>-</code>, where there's no data; it will show as — in the database. Dates can be <code>YYYY-MM-DD</code> or <code>DD/MM/YYYY</code>.</p>
 
 <form method="post" action="/coatings/bulk-upload" enctype="multipart/form-data">
-    <label>File</label>
-    <input type="file" name="file" accept=".csv,.xlsx,.xls" required>
+    <label for="file">File</label>
+    <input type="file" id="file" name="file" accept=".csv,.xlsx,.xls" required>
     <button type="submit">Upload</button>
 </form>
+
+{% if upload_error %}<p class="error">{{ upload_error }}</p>{% endif %}
 
 {% if results %}
 <div class="result">
     <h3>Results</h3>
     <p>Successfully created: {{ results.success|length }}</p>
     <p>Failed: {{ results.failed|length }}</p>
-
+    {% if results.ignored %}
+    <p class="hint">Ignored columns (not recognised): {{ results.ignored|join(", ") }}</p>
+    {% endif %}
     {% if results.failed %}
     <h4>Failures</h4>
     <ul>
