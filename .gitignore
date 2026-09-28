@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .env
 schema.sql
+uploads/
+*.mpr
+test_mpr.py
+*.session.sql

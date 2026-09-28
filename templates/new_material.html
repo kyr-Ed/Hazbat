@@ -1,16 +1,50 @@
 {% extends "base.html" %}
 {% block title %}New Material — BMAC{% endblock %}
 {% block content %}
+{% set f = form or {} %}
 <h1>New Material</h1>
 <form method="post" action="/materials/new">
-    <label>Material ID</label>
-    <input type="text" name="material_id" placeholder="e.g. CAT-NMC-002" required>
+    <fieldset class="form-section">
+        <legend>Required</legend>
+        <div class="field">
+            <label for="material_id">Material ID</label>
+            <input type="text" id="material_id" name="material_id" placeholder="e.g. CAT-NMC-002" value="{{ f.get("material_id", "") }}" required>
+        </div>
+        <div class="field">
+            <label for="chemistry">Chemistry</label>
+            <input type="text" id="chemistry" name="chemistry" placeholder="e.g. NMC 811" value="{{ f.get("chemistry", "") }}" required>
+        </div>
+        <div class="field">
+            <label for="supplier">Supplier</label>
+            <input type="text" id="supplier" name="supplier" placeholder="e.g. BTR" value="{{ f.get("supplier", "") }}" required>
+        </div>
+    </fieldset>
 
-    <label>Chemistry</label>
-    <input type="text" name="chemistry" required>
-
-    <label>Supplier</label>
-    <input type="text" name="supplier" required>
+    <fieldset class="form-section">
+        <legend>Details <span class="optional">optional — fill in what you know</span></legend>
+        <div class="form-grid">
+        <div class="field">
+            <label for="date_received">Date Received</label>
+            <input type="date" id="date_received" name="date_received" value="{{ f.get("date_received", "") }}">
+        </div>
+        <div class="field">
+            <label for="quantity_kg">Quantity (kg)</label>
+            <input type="number" id="quantity_kg" name="quantity_kg" step="any" min="0" placeholder="e.g. 5.0" value="{{ f.get("quantity_kg", "") }}">
+        </div>
+        <div class="field">
+            <label for="location">Location</label>
+            <input type="text" id="location" name="location" placeholder="e.g. Dry room, shelf B2" value="{{ f.get("location", "") }}">
+        </div>
+        <div class="field">
+            <label for="availability">Availability</label>
+            <input type="text" id="availability" name="availability" placeholder="e.g. Available" value="{{ f.get("availability", "") }}">
+        </div>
+        <div class="field field-wide">
+            <label for="notes">Notes</label>
+            <textarea id="notes" name="notes" rows="3" placeholder="Batch number, CoA reference, handling notes…">{{ f.get("notes", "") }}</textarea>
+        </div>
+        </div>
+    </fieldset>
 
     <button type="submit">Create Material</button>
 </form>

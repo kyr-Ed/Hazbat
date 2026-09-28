@@ -12,7 +12,7 @@
     <h2>{{ record_id }}</h2>
     {% for key, value in record.items() %}
     {% if key != '_chain' %}
-    <div class="row"><strong>{{ key }}</strong><span>{{ value }}</span></div>
+    <div class="row"><strong>{{ key }}</strong><span>{{ value if value is not none else "—" }}</span></div>
     {% endif %}
     {% endfor %}
 

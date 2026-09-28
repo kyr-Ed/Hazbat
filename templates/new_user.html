@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Create User — BMAC{% endblock %}
+{% block content %}
+<h1>Create User</h1>
+<p style="color: #999; font-size: 14px;">Admin only. New users get access to whichever projects you tick below.</p>
+
+<form method="post" action="/admin/users/new" style="max-width: 420px;">
+    <label>Username</label>
+    <input type="text" name="username" required>
+
+    <label>Password</label>
+    <input type="password" name="password" required>
+
+    <label>Full Name</label>
+    <input type="text" name="full_name" required>
+
+    <label style="display: flex; align-items: center; gap: 8px; margin-top: 15px;">
+        <input type="checkbox" name="is_admin" style="width: auto;">
+        Grant admin access (sees all projects, bypasses restrictions)
+    </label>
+
+    <label style="margin-top: 15px;">Project Access</label>
+    {% for project in projects %}
+    <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; margin-top: 6px;">
+        <input type="checkbox" name="projects" value="{{ project }}" style="width: auto;">
+        {{ project }}
+    </label>
+    {% endfor %}
+
+    <button type="submit">Create User</button>
+</form>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+{% endblock %}

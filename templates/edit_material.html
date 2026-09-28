@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ material.material_id }} — BMAC{% endblock %}
+{% block content %}
+<h1>Edit Material</h1>
+<p style="color: #999; font-size: 14px;">{{ material.material_id }}</p>
+
+<form method="post" action="/materials/{{ material.material_id }}/edit" style="max-width: 420px;">
+    <label>Chemistry</label>
+    <input type="text" name="chemistry" value="{{ material.chemistry }}" required>
+
+    <label>Supplier</label>
+    <input type="text" name="supplier" value="{{ material.supplier }}" required>
+
+    <button type="submit">Save Changes</button>
+</form>
+
+{% if request.session.get('is_admin') %}
+<form method="post" action="/materials/{{ material.material_id }}/delete" style="margin-top: 20px;"
+      onsubmit="return confirm('Delete {{ material.material_id }}? This cannot be undone.');">
+    <button type="submit" style="background: #c62828;">Delete Material</button>
+</form>
+{% endif %}
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+{% endblock %}

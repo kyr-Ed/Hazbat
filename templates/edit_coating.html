@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ coating.coating_id }} — BMAC{% endblock %}
+{% block content %}
+<h1>Edit Coating</h1>
+<p style="color: #999; font-size: 14px;">{{ coating.coating_id }}</p>
+
+<form method="post" action="/coatings/{{ coating.coating_id }}/edit" style="max-width: 420px;">
+    <label>Made By</label>
+    <input type="text" name="made_by" value="{{ coating.made_by }}" required>
+
+    <label>GSM</label>
+    <input type="text" name="coat_weight_gsm" value="{{ coating.coat_weight_gsm or '' }}">
+
+    <label>Porosity</label>
+    <input type="text" name="porosity" value="{{ coating.porosity or '' }}">
+
+    <button type="submit">Save Changes</button>
+</form>
+
+{% if request.session.get('is_admin') %}
+<form method="post" action="/coatings/{{ coating.coating_id }}/delete" style="margin-top: 20px;"
+      onsubmit="return confirm('Delete {{ coating.coating_id }}? This cannot be undone.');">
+    <button type="submit" style="background: #c62828;">Delete Coating</button>
+</form>
+{% endif %}
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+{% endblock %}

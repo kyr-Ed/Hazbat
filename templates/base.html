@@ -70,7 +70,21 @@
         width: 100%; padding: 10px; margin-top: 6px; box-sizing: border-box;
         border: 1px solid #dde2ee; border-radius: 8px; font-size: 14px;
     }
-    input:focus { outline: none; border-color: #2e5fa3; box-shadow: 0 0 0 3px rgba(46,95,163,0.12); }
+    select {
+        width: 100%; padding: 10px; margin-top: 6px; box-sizing: border-box; background: #fff;
+        border: 1px solid #dde2ee; border-radius: 8px; font-size: 14px; font-family: inherit;
+    }
+    .hint { font-size: 13px; color: #777; margin: 6px 0 0; }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: #2e5fa3; box-shadow: 0 0 0 3px rgba(46,95,163,0.12); }
+    textarea {
+        width: 100%; padding: 10px; margin-top: 6px; box-sizing: border-box; resize: vertical;
+        border: 1px solid #dde2ee; border-radius: 8px; font-size: 14px; font-family: inherit;
+    }
+    .form-section { border: none; padding: 0; margin: 24px 0 0; }
+    .form-section legend { font-weight: 700; font-size: 15px; color: #1b3a6b; padding: 0; }
+    .form-section .optional { font-weight: 400; font-size: 13px; color: #777; margin-left: 6px; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); column-gap: 18px; }
+    .form-grid .field-wide { grid-column: 1 / -1; }
     button {
         margin-top: 20px; padding: 11px 26px; background: #2e5fa3; color: white;
         border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px;
@@ -103,6 +117,7 @@
                 <a href="/inventory/coincell">Coin Cells</a>
                 <a href="/inventory/mlp">MLP</a>
                 <a href="/HAZbot" class="{{ 'active' if request.url.path == '/HAZbot' else '' }}">DatabaseHelper</a>
+                <a href="/cycling/upload" class="{{ 'active' if request.url.path == '/cycling/upload' else '' }}">Upload Cycling Data</a>
             </div>
         </div>
 
