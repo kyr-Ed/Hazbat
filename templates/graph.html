@@ -186,7 +186,11 @@
                 physics: { hierarchicalRepulsion: { nodeDistance: 85 } },
                 interaction: { hover: true, tooltipDelay: 100 }
             });
-
+            // Freeze positions once layout settles — prevents jiggle on nodesDS.update()
+            network.once('stabilized', () => {
+                network.setOptions({ physics: false });
+            });
+            
             network.on('zoom', onZoom);
 
             network.on("click", async function(params) {
