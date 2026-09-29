@@ -237,8 +237,18 @@
                 mlp:      { background: '#ffb800', border: '#cc9300' },
                 project:  { background: '#ffffff', border: '#888888' }
             };
+            // Assign level to groups for easier understanding
+            const groupLevels = {
+                material: 0,
+                coating: 1,
+                slp: 2,
+                coincell: 2,
+                mlp: 2,
+                project: 3
+            };
             const nodes = new vis.DataSet(data.nodes.map(n => ({
                 ...n,
+                level: groupLevels[n.group],   // force same-group vertical alignment
                 label: shortLabel(n.id, n.group),
                 title: n.id + (n.title ? ' — ' + n.title : ''),
                 shape: 'dot',
