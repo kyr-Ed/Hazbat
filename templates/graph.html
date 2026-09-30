@@ -18,27 +18,35 @@
 </div>
 
 <script>
+
+    // --- Label ---
     function shortLabel(id, group) {
-        if (group === 'project') return id.replace('PROJECT-', '');
-        if (group === 'material') return id;
-        if (group === 'coating') return id.split('-').slice(-1)[0].replace('C', 'Coat ');
-        if (group === 'slp') return 'SLP-' + id.split('-SLP-')[1];
-        if (group === 'coincell') return 'CC-' + id.split('-CC-')[1];
+        if (group === 'project')    return id.replace('PROJECT-', '');
+        if (group === 'material')   return id;
+        if (group === 'coating')    return id.split('-').slice(-1)[0].replace('C', 'Coat ');
+        if (group === 'slp')        return 'SLP-' + id.split('-SLP-')[1];
+        if (group === 'coincell')   return 'CC-' + id.split('-CC-')[1];
         return id;
     }
 
-    let network, nodesDS, edgesDS, pulseInterval;
+    // --- Styling ---
+    const groupColors = {
+            material: { background: '#00e5ff', border: '#00b8cc' },
+            coating:  { background: '#7c4dff', border: '#5c35cc' },
+            slp:      { background: '#00ff9d', border: '#00cc7d' },
+            coincell: { background: '#ff6ec7', border: '#cc5599' },
+            mlp:      { background: '#ffb800', border: '#cc9300' },
+            project:  { background: '#ffffff', border: '#888888' }
+            };
 
-    // --- Border scaling state ---
-    // borderWidth in vis.js is in screen pixels; node size scales with zoom.
-    // We track the current scale and re-apply borders on every zoom event so
-    // the border thickness stays visually proportional to the node size.
-    let currentScale = 1;
-
-    // null  → no selection active (all nodes at normal style)
-    // Set   → active selection; contains IDs on the highlighted path
-    let currentSelectedPath = null;
-
+    const groupLevels = {
+            material: 0,
+            coating:  1,
+            slp:      2,
+            coincell: 2,
+            mlp:      2,
+            project:  3
+    };
     // Base border widths at scale 1. Multiplied by currentScale when applied.
     const BASE_BORDER = {
         normal:   2,   // no selection active
@@ -46,17 +54,43 @@
         dimmed:   1    // off the highlighted path
     };
 
+    const EDGE_RESET_COLOR = 'rgba(120,140,200,0.35)';
+
+    let network, nodesDS, edgesDS, pulseInterval;
+
+    let currentScale = 1;
+    // null  → no selection active (all nodes at normal style)
+    // Set   → active selection; contains IDs on the highlighted path
+    let currentSelectedPath = null;
+
+    
+    // --- functions ---
+     function rgba(hex, opacity) {
+        const value = parseInt(hex.slice(1), 16);
+        return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${opacity})`;
+    }
+
+     // Escape a value for safe insertion into HTML.
+    function esc(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // --- Path finding ---
     function findPathToRoot(targetId, edges) {
         // Walk backwards through edges (child -> parent) until no parent found.
         // Excludes dashed project-reference edges — only follows real traceability links.
         const path = [targetId];
         let current = targetId;
         let guard = 0;
-        while (guard++ < 20) {
-            const parentEdge = edges.find(e => e.to === current && !e.dashes);
-            if (!parentEdge) break;
-            path.unshift(parentEdge.from);
-            current = parentEdge.from;
+        for (let guard = 0; guard < 20; guard++) {
+            const parent = edges.find(e => e.to === current && !e.dashes);
+            if (!parent) break;
+            path.unshift(parent.from);
+            current = parent.from;
         }
         return path;
     }
@@ -69,91 +103,74 @@
         while (queue.length) {
             const current = queue.shift();
             edges
-                .filter(edge => edge.from === current && !edge.dashes)
-                .forEach(edge => {
-                    if (!descendants.has(edge.to)) {
-                        descendants.add(edge.to);
-                        queue.push(edge.to);
+                .filter(e => e.from === current && !e.dashes)
+                .forEach(e => {
+                    if (!descendants.has(e.to)) {
+                        descendants.add(e.to);
+                        queue.push(e.to);
                     }
                 });
         }
         return descendants;
     }
 
+    // Returns a complete vis.js node-style object for one node.
+    // isOnPath = true  → highlighted (or no selection active)
+    // isOnPath = false → dimmed (off the selected path)
+    function buildNodeStyle(node, isOnPath) {
+        const c = GROUP_COLORS[node.group];
+        return {
+            id: node.id,
+            borderWidth: (isOnPath ? BASE_BORDER.selected : BASE_BORDER.dimmed) * currentScale,
+            color: isOnPath
+                ? { background: c.background, border: c.border }
+                : { background: rgba(c.background, 0.12), border: rgba(c.border, 0.18) },
+            font: {
+                color: isOnPath ? '#e8e8f0' : 'rgba(232,232,240,0.22)',
+                size:  node.group === 'project' ? 14 : 12,
+                bold:  node.group === 'project'
+            },
+            shadow: isOnPath
+                ? { enabled: true, color: c.background, size: 10, x: 0, y: 0 }
+                : { enabled: false }
+        };
+    }
+
+    // Apply node styles in ONE batched update — one canvas redraw instead of N.
+    function applyNodeStyles(selectedPath) {
+        nodesDS.update(
+            nodesDS.get().map(node =>
+                buildNodeStyle(node, selectedPath === null || selectedPath.has(node.id))
+            )
+        );
+    }
+
+    // Reset all edges in ONE batched update.
+    function resetEdgeStyles() {
+        nodesDS.update(
+            edgesDS.get().map(e => ({
+                id:    e.id,
+                color: { color: EDGE_RESET_COLOR },
+                width: 1.5
+            }))
+        );
+    }
+
+
+    //--- Selection handling ---
     function clearSelection() {
         currentSelectedPath = null;
         document.getElementById('nodeCard').style.display = 'none';
         if (pulseInterval) clearInterval(pulseInterval);
-        edgesDS.forEach(e => edgesDS.update({ id: e.id, color: { color: 'rgba(120,140,200,0.35)' }, width: 1.5 }));
-        nodesDS.forEach(node => setNodeStyle(node, true));
+        resetEdgeStyles();
+        applyNodeStyles(null);
     }
 
-    const groupColors = {
-            material: { background: '#00e5ff', border: '#00b8cc' },
-            coating:  { background: '#7c4dff', border: '#5c35cc' },
-            slp:      { background: '#00ff9d', border: '#00cc7d' },
-            coincell: { background: '#ff6ec7', border: '#cc5599' },
-            mlp:      { background: '#ffb800', border: '#cc9300' },
-            project:  { background: '#ffffff', border: '#888888' }
-            };
-
-    // Assign level to groups for easier understanding
-    const groupLevels = {
-            material: 0,
-            coating: 1,
-            slp: 2,
-            coincell: 2,
-            mlp: 2,
-            project: 3
-    };
-
-
-    function rgba(hex, opacity) {
-        const value = parseInt(hex.slice(1), 16);
-        return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${opacity})`;
-    }
-
-    // isOnPath = true  → node is highlighted (or no selection is active, i.e. normal state)
-    // isOnPath = false → node is dimmed because it is off the selected path
-    function setNodeStyle(node, isOnPath) {
-        const colors = groupColors[node.group];
-
-        // Scale the border so it remains proportional to node size at any zoom level.
-        const border = isOnPath
-            ? BASE_BORDER.selected * currentScale
-            : BASE_BORDER.dimmed   * currentScale;
-        
-        nodesDS.update({
-            id: node.id,
-            borderWidth: border,
-            color: isOnPath
-                ? { background: colors.background, border: colors.border }
-                : { background: rgba(colors.background, 0.12), border: rgba(colors.border, 0.18) },
-            font: {
-                color: isOnPath ? '#e8e8f0' : 'rgba(232,232,240,0.22)',
-                size: node.group === 'project' ? 14 : 12,
-                bold: node.group === 'project'
-            },
-            shadow: isOnPath
-                ? { enabled: true, color: colors.background, size: 10, x: 0, y: 0 }
-                : { enabled: false }
-        });
-    }
-
-     // Called on every zoom event. Re-applies the correct style (with updated
-    // scale) to every node, respecting the current selection state.
+    // Re-applies all node styles with the updated scale on every zoom tick.
+    // Uses a single batched update regardless of selection state.
     function onZoom(params) {
         currentScale = params.scale;
-        if (currentSelectedPath !== null) {
-            // Selection is active — re-apply highlight/dim with new border sizes.
-            nodesDS.forEach(node => setNodeStyle(node, currentSelectedPath.has(node.id)));
-        } else {
-            // No selection — update all nodes to normal border width only.
-            nodesDS.forEach(n => nodesDS.update({
-                id: n.id,
-                borderWidth: BASE_BORDER.normal * currentScale
-            }));
-        }
+        applyNodeStyles(currentSelectedPath);
     }
     
     fetch('/api/graph')
@@ -162,37 +179,43 @@
             
             nodesDS = new vis.DataSet(data.nodes.map(n => ({
                 ...n,
-                level: groupLevels[n.group],   // force same-group vertical alignment
-                label: shortLabel(n.id, n.group),
-                title: n.id + (n.title ? ' — ' + n.title : ''),
-                shape: 'dot',
-                size: n.group === 'project' ? 26 : 14,
-                borderWidth: 2,
-                color: { background: groupColors[n.group].background, border: groupColors[n.group].border },
-                font: { color: '#e8e8f0', size: n.group === 'project' ? 14 : 12, bold: n.group === 'project' },
-                shadow: { enabled: true, color: groupColors[n.group].background, size: 10, x: 0, y: 0 }
+                level:        groupLevels[n.group],   // force same-group vertical alignment
+                label:        shortLabel(n.id, n.group),
+                title:        n.id + (n.title ? ' — ' + n.title : ''),
+                shape:        'dot',
+                size:         n.group === 'project' ? 26 : 14,
+                borderWidth:  BASE_BORDER.normal,
+                color:        { background: groupColors[n.group].background, border: groupColors[n.group].border },
+                font:         { color: '#e8e8f0', size: n.group === 'project' ? 14 : 12, bold: n.group === 'project' },
+                shadow:       { enabled: true, color: groupColors[n.group].background, size: 10, x: 0, y: 0 }
             })));
 
             edgesDS = new vis.DataSet(data.edges.map((e, i) => ({
                 ...e,
-                id: i,
-                color: { color: 'rgba(120,140,200,0.35)' },
-                width: 1.5,
+                id:     i,
+                color:  { color: EDGE_RESET_COLOR },
+                width:   1.5,
                 smooth: { type: 'cubicBezier', roundness: 0.4 }
             })));
 
-            network = new vis.Network(document.getElementById('network'), { nodes: nodesDS, edges: edgesDS }, {
-                layout: { hierarchical: { direction: 'UD', sortMethod: 'hubsize', levelSeparation: 130, nodeSpacing: 55 } },
-                physics: { hierarchicalRepulsion: { nodeDistance: 85 } },
-                interaction: { hover: true, tooltipDelay: 100 }
+            network = new vis.Network(
+                document.getElementById('network'), 
+                { nodes: nodesDS, edges: edgesDS }, 
+                {
+                    layout:      { hierarchical: { direction: 'UD', sortMethod: 'hubsize', levelSeparation: 130, nodeSpacing: 55 } },
+                    physics:     { hierarchicalRepulsion: { nodeDistance: 85 } },
+                    interaction: { hover: true, tooltipDelay: 100 }
             });
+
             // Freeze positions once layout settles — prevents jiggle on nodesDS.update()
             network.once('stabilized', () => {
                 network.setOptions({ physics: false });
+                network.storePositions(); // ← writes x/y into nodesDS
             });
             
             network.on('zoom', onZoom);
 
+            // ---Click handler---
             network.on("click", async function(params) {
                 if (pulseInterval) clearInterval(pulseInterval);
 
@@ -203,31 +226,20 @@
                 const nodeId = params.nodes[0];
                 if (nodeId.startsWith('PROJECT-')) return;
 
-                // Reset all edges/nodes first
-                edgesDS.forEach(e => edgesDS.update({ id: e.id, color: { color: 'rgba(120,140,200,0.35)' }, width: 1.5 }));
-                // nodesDS.forEach(n => nodesDS.update({ id: n.id, borderWidth: 2 }));
-                nodesDS.forEach(node => setNodeStyle(node, true));
+                // Build the full highlighted set: upstream path + all descendants.
+                const allEdges    = edgesDS.get();
+                const path        = findPathToRoot(nodeId, allEdges);
+                const downstream  = findDescendants(nodeId, allEdges);
+                const selectedPath = new Set([...path, ...downstream]);
+                currentSelectedPath = selectedPath;          // expose to onZoom
 
-                // Trace the manufacturing path back to its root material
-                const allEdges = edgesDS.get();
-                const path = findPathToRoot(nodeId, allEdges);
+                // Dim every node not in the set; highlight those that are — ONE redraw.
+                applyNodeStyles(selectedPath);
 
-                // Include the upstream path and every downstream traceability node.
-                const downstreamNodes = findDescendants(nodeId, allEdges);
-                const selectedPath = new Set([...path, ...downstreamNodes]);
-                currentSelectedPath = selectedPath
-                
-                // Highlight all real edges within the selected traceability branch.
+                // Collect edges that connect nodes within the highlighted set.
                 const pathEdgeIds = allEdges
-                    .filter(edge =>
-                        !edge.dashes &&
-                        selectedPath.has(edge.from) &&
-                        selectedPath.has(edge.to)
-                    )
-                    .map(edge => edge.id);
-
-                // Brighten selected/upstream/downstream nodes and dim all others.
-                nodesDS.forEach(node => setNodeStyle(node, selectedPath.has(node.id)));
+                    .filter(e => !e.dashes && selectedPath.has(e.from) && selectedPath.has(e.to))
+                    .map(e => e.id);
 
                 // Pulsing animation along the path edges
                 let bright = false;
@@ -244,6 +256,7 @@
                 const res = await fetch(`/api/card/${nodeId}`);
                 if (!res.ok) return;
                 const cardData = await res.json();
+
                 document.getElementById('nodeCardTitle').textContent = cardData.record_id;
                 document.getElementById('nodeCardFields').innerHTML = Object.entries(cardData.record)
                     .map(([k, v]) => `<div class="row"><span class="label">${k}</span><span class="value">${v}</span></div>`)
@@ -255,6 +268,8 @@
                 document.getElementById('nodeCard').style.display = 'block';
             });
         });
+
+
 </script>
 <div style="margin-top: 40px;">
     <div class="result">

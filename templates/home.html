@@ -226,10 +226,8 @@
         if (group === 'coincell') return 'CC-' + id.split('-CC-')[1];
         return id;
     }
-    fetch('/api/graph')
-        .then(res => res.json())
-        .then(data => {
-            const groupColors = {
+
+    const groupColors = {
                 material: { background: '#00e5ff', border: '#00b8cc' },
                 coating:  { background: '#7c4dff', border: '#5c35cc' },
                 slp:      { background: '#00ff9d', border: '#00cc7d' },
@@ -246,6 +244,10 @@
                 mlp: 2,
                 project: 3
             };
+
+    fetch('/api/graph')
+        .then(res => res.json())
+        .then(data => {
             const nodes = new vis.DataSet(data.nodes.map(n => ({
                 ...n,
                 level: groupLevels[n.group],   // force same-group vertical alignment
@@ -257,6 +259,7 @@
                 font: { color: '#e8e8f0', size: n.group === 'project' ? 12 : 10, bold: n.group === 'project' },
                 shadow: { enabled: true, color: groupColors[n.group].background, size: 8, x: 0, y: 0 }
             })));
+            
             const edges = new vis.DataSet(data.edges.map(e => ({
                 ...e,
                 color: { color: 'rgba(120,140,200,0.35)', highlight: '#00e5ff' },
@@ -264,7 +267,7 @@
                 smooth: { type: 'cubicBezier', roundness: 0.4 }
             })));
             new vis.Network(document.getElementById('network'), { nodes, edges }, {
-                layout: { hierarchical: { direction: 'UD', sortMethod: 'directed', levelSeparation: 90, nodeSpacing: 40 } },
+                layout: { hierarchical: { direction: 'UD', sortMethod: 'hubsize', levelSeparation: 90, nodeSpacing: 40 } },
                 physics: { hierarchicalRepulsion: { nodeDistance: 60 } },
                 interaction: { hover: true, tooltipDelay: 100, dragView: true, zoomView: true }
             });
