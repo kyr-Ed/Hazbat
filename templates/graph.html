@@ -5,8 +5,62 @@
 <p style="margin: 4px 0 0; color: #999; font-size: 14px;">Click a node to trace its manufacturing path and see full details</p>
 
 <div style="display: flex; gap: 16px; margin-top: 16px; align-items: flex-start;">
+
+    // --- Filter panel ---
+    <div id="filterPanel"
+         style="width: 195px; flex-shrink: 0; position: sticky; top: 20px;
+                max-height: calc(100vh - 48px); overflow-y: auto;"
+         class="result">
+
+         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <span style="font-size: 13px; font-weight: 700; color: #1b3a6b;">FILTERS</span>
+            <span id="clearFilters" onclick="resetFilters()"
+                  style="font-size: 12px; color: #2e5fa3; cursor: pointer; display: none;">
+                Clear all
+            </span>
+        </div> 
+        
+        <!-- PROJECT -->
+        <div class="fs-wrap">
+            <div class="fs-head" onclick="toggleSection('project')">
+                PROJECT <span id="chev-project" class="chev">▾</span>
+            </div>
+            <div id="sec-project"></div>
+        </div>
+        <hr class="fs-sep">
+
+        <!-- MATERIAL -->
+        <div class="fs-wrap">
+            <div class="fs-head" onclick="toggleSection('material')">
+                MATERIAL <span id="chev-material" class="chev">▾</span>
+            </div>
+            <div id="sec-material"></div>
+        </div>
+        <hr class="fs-sep">
+
+        <!-- COATING -->
+        <div class="fs-wrap">
+            <div class="fs-head" onclick="toggleSection('coating')">
+                COATING <span id="chev-coating" class="chev">▾</span>
+            </div>
+            <div id="sec-coating"></div>
+        </div>
+        <hr class="fs-sep">
+
+        <!-- CELL -->
+        <div class="fs-wrap">
+            <div class="fs-head" onclick="toggleSection('cell')">
+                CELL <span id="chev-cell" class="chev">▾</span>
+            </div>
+            <div id="sec-cell"></div>
+        </div>
+
+    </div>
+    
+    // ---  Graph canvas ---
     <div id="network" style="flex: 1; min-width: 0; height: 700px; background: #0a0e1a; border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);"></div>
 
+    // --- Node card ---
     <div id="nodeCard" style="display: none; width: 320px; flex-shrink: 0; position: sticky; top: 20px;" class="result">
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
             <h3 id="nodeCardTitle" style="margin: 0;"></h3>
@@ -17,69 +71,186 @@
     </div>
 </div>
 
+<style>
+/* ── Filter panel layout ──────────────────────────────────────────── */
+.fs-wrap { margin-bottom: 4px; }
+.fs-head {
+    font-size: 11px; font-weight: 700; color: #999;
+    letter-spacing: 0.06em; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 0; user-select: none;
+}
+.fs-head:hover { color: #1b3a6b; }
+.chev { font-size: 10px; display: inline-block; transition: transform 0.15s; }
+.chev.up { transform: rotate(-90deg); }
+.fs-sep { border: none; border-top: 1px solid #eee; margin: 10px 0; }
+
+/* ── Control elements ─────────────────────────────────────────────── */
+.f-lbl {
+    font-size: 11px; font-weight: 600; color: #666;
+    margin: 10px 0 5px;
+}
+.f-cb {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: #333; margin-bottom: 5px; cursor: pointer;
+}
+.f-cb input[type=checkbox] { cursor: pointer; accent-color: #2e5fa3; }
+
+.f-sel {
+    width: 100%; padding: 5px 8px; font-size: 12px;
+    border: 1px solid #dde2ee; border-radius: 6px;
+    background: #fff; color: #333; cursor: pointer; margin-bottom: 4px;
+}
+.date-row { display: flex; gap: 4px; align-items: center; margin-bottom: 2px; }
+.f-date {
+    flex: 1; min-width: 0; padding: 4px; font-size: 11px;
+    border: 1px solid #dde2ee; border-radius: 6px; color: #333;
+}
+
+/* ── Dual range slider ────────────────────────────────────────────── */
+.r-wrap { padding: 2px 0 10px; }
+.r-vals {
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: #555; margin-bottom: 6px;
+}
+.r-track-wrap { position: relative; height: 24px; }
+.r-track {
+    position: absolute; top: 10px; left: 0; right: 0;
+    height: 4px; background: #dde2ee; border-radius: 2px;
+}
+.r-fill { position: absolute; height: 4px; background: #2e5fa3; border-radius: 2px; }
+.r-wrap input[type=range] {
+    position: absolute; width: 100%; top: 8px; margin: 0;
+    -webkit-appearance: none; appearance: none;
+    background: transparent; pointer-events: none; height: 4px;
+}
+.r-wrap input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    border-radius: 50%; background: #2e5fa3; cursor: pointer;
+    pointer-events: all; border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+.r-wrap input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #2e5fa3; cursor: pointer; pointer-events: all;
+    border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+</style>
+
+
+
+
 <script>
 
-    // --- Label ---
-    function shortLabel(id, group) {
-        if (group === 'project')    return id.replace('PROJECT-', '');
-        if (group === 'material')   return id;
-        if (group === 'coating')    return id.split('-').slice(-1)[0].replace('C', 'Coat ');
-        if (group === 'slp')        return 'SLP-' + id.split('-SLP-')[1];
-        if (group === 'coincell')   return 'CC-' + id.split('-CC-')[1];
-        return id;
+// --- Label ---
+function shortLabel(id, group) {
+    if (group === 'project')    return id.replace('PROJECT-', '');
+    if (group === 'material')   return id;
+    if (group === 'coating')    return id.split('-').slice(-1)[0].replace('C', 'Coat ');
+    if (group === 'slp')        return 'SLP-' + id.split('-SLP-')[1];
+    if (group === 'coincell')   return 'CC-' + id.split('-CC-')[1];
+    return id;
+}
+
+// --- Styling ---
+const groupColors = {
+    material: { background: '#00e5ff', border: '#00b8cc' },
+    coating:  { background: '#7c4dff', border: '#5c35cc' },
+    slp:      { background: '#00ff9d', border: '#00cc7d' },
+    coincell: { background: '#ff6ec7', border: '#cc5599' },
+    mlp:      { background: '#ffb800', border: '#cc9300' },
+    project:  { background: '#ffffff', border: '#888888' }
+};
+
+const groupLevels = {
+    material: 0,
+    coating:  1,
+    slp:      2,  coincell: 2,  mlp:      2,
+    project:  3
+};
+
+const groupNames = {
+    material: 'Material', coating: 'Coating', slp: 'SLP',
+    coincell: 'Coin Cell', mlp: 'MLP', project: 'Project'
+};
+
+// Base border widths at scale 1. Multiplied by currentScale when applied.
+const BASE_BORDER = {
+    normal:   2,   selected: 3,   dimmed:   1   };
+
+const EDGE_RESET_COLOR = 'rgba(120,140,200,0.35)';
+
+
+let network, nodesDS, edgesDS, pulseInterval;
+
+let currentScale = 1;
+// null  → no selection active (all nodes at normal style)
+// Set   → active selection; contains IDs on the highlighted path
+let currentSelectedPath = null;
+
+// --- Filter state ---
+    // activeGroups  : inclusion set  — groups to SHOW  (empty = hide all)
+    // activeProjects: inclusion set  — projects to show (empty = show all)
+    // FS.*          : exclusion sets — values to HIDE   (empty = show all)
+    //                 range bounds   — null = no limit
+const activeGroups   = new Set(Object.keys(groupColors));
+
+const activeProjects = new Set();
+
+const FS = {
+    mat: {
+        electrodeType : 'all',   // 'all' | 'anode' | 'cathode'
+        exChemistry   : new Set(),
+        exSupplier    : new Set(),
+        exLocation    : new Set(),
+        exAvailability: new Set(),
+        dateMin: null, dateMax: null,
+        qtyMin:  null, qtyMax:  null
+    },
+    coat: {
+        exMadeBy: new Set(),
+        dateMin: null, dateMax: null,
+        gsmMin:  null, gsmMax:  null,
+        porMin:  null, porMax:  null
+    },
+    cell: {
+        exMadeBy     : new Set(),
+        exElectrolyte: new Set(),
+        dateMin: null, dateMax: null,
+        capMin:  null, capMax:  null,
+        npMin:   null, npMax:   null
     }
+};
 
-    // --- Styling ---
-    const groupColors = {
-            material: { background: '#00e5ff', border: '#00b8cc' },
-            coating:  { background: '#7c4dff', border: '#5c35cc' },
-            slp:      { background: '#00ff9d', border: '#00cc7d' },
-            coincell: { background: '#ff6ec7', border: '#cc5599' },
-            mlp:      { background: '#ffb800', border: '#cc9300' },
-            project:  { background: '#ffffff', border: '#888888' }
-            };
-
-    const groupLevels = {
-            material: 0,
-            coating:  1,
-            slp:      2,
-            coincell: 2,
-            mlp:      2,
-            project:  3
-    };
-    // Base border widths at scale 1. Multiplied by currentScale when applied.
-    const BASE_BORDER = {
-        normal:   2,   // no selection active
-        selected: 3,   // on the highlighted path
-        dimmed:   1    // off the highlighted path
-    };
-
-    const EDGE_RESET_COLOR = 'rgba(120,140,200,0.35)';
-
-    let network, nodesDS, edgesDS, pulseInterval;
-
-    let currentScale = 1;
-    // null  → no selection active (all nodes at normal style)
-    // Set   → active selection; contains IDs on the highlighted path
-    let currentSelectedPath = null;
+// Pre-computed set of nodes visible under the current project filter.
+// null = all nodes pass (no project filter active).
+let projectVisibleNodes = null;
 
     
-    // --- functions ---
-     function rgba(hex, opacity) {
-        const value = parseInt(hex.slice(1), 16);
-        return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${opacity})`;
-    }
+// --- functions ---
+function rgba(hex, opacity) {
+    const value = parseInt(hex.slice(1), 16);
+    return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${opacity})`;
+}
 
-     // Escape a value for safe insertion into HTML.
-    function esc(str) {
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
-    }
+// Escape a value for safe insertion into HTML.
+function esc(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
 
-    // --- Path finding ---
+// --- Collapsible filter selections ---
+    function toggleSection(name) {
+    const sec  = document.getElementById('sec-' + name);
+    const chev = document.getElementById('chev-' + name);
+    const hide = sec.style.display !== 'none';
+    sec.style.display = hide ? 'none' : '';
+    chev.classList.toggle('up', hide);
+    
+// --- Path finding ---
     function findPathToRoot(targetId, edges) {
         // Walk backwards through edges (child -> parent) until no parent found.
         // Excludes dashed project-reference edges — only follows real traceability links.
@@ -94,7 +265,6 @@
         }
         return path;
     }
-
     function findDescendants(startId, edges) {
         // Follow real traceability links forward, from parent to child.
         const descendants = new Set([startId]);
@@ -114,11 +284,9 @@
         return descendants;
     }
 
-    // Returns a complete vis.js node-style object for one node.
-    // isOnPath = true  → highlighted (or no selection active)
-    // isOnPath = false → dimmed (off the selected path)
+    //--- Node styling ---
     function buildNodeStyle(node, isOnPath) {
-        const c = GROUP_COLORS[node.group];
+        const c = groupColors[node.group];
         return {
             id: node.id,
             borderWidth: (isOnPath ? BASE_BORDER.selected : BASE_BORDER.dimmed) * currentScale,
@@ -135,8 +303,7 @@
                 : { enabled: false }
         };
     }
-
-    // Apply node styles in ONE batched update — one canvas redraw instead of N.
+        // Apply node styles in ONE batched update — one canvas redraw instead of N.
     function applyNodeStyles(selectedPath) {
         nodesDS.update(
             nodesDS.get().map(node =>
@@ -144,8 +311,7 @@
             )
         );
     }
-
-    // Reset all edges in ONE batched update.
+        // Reset all edges in ONE batched update.
     function resetEdgeStyles() {
         nodesDS.update(
             edgesDS.get().map(e => ({
@@ -156,7 +322,389 @@
         );
     }
 
+    //--Filter pre-computation---
+    function updateProjectVisibleNodes() {
+    if (activeProjects.size === 0) {
+        projectVisibleNodes = null;
+        return;
+    }
+    const allEdges = edgesDS.get();
+    projectVisibleNodes = new Set([...activeProjects]);
 
+    allEdges
+        .filter(e => e.dashes && activeProjects.has(e.from))
+        .forEach(e => {
+            findPathToRoot(e.to, allEdges).forEach(id => projectVisibleNodes.add(id));
+            findDescendants(e.to, allEdges).forEach(id => projectVisibleNodes.add(id));
+        });
+    }
+
+    // --- Node visibility ---    
+    function isNodeVisible(node) {
+    // 1. Node-type (group) filter
+    // if (!activeGroups.has(node.group)) return false;
+
+    // 2. Project filter (pre-computed inclusion set)
+    if (projectVisibleNodes !== null && !projectVisibleNodes.has(node.id)) return false;
+
+    // 3. Attribute filters — only applied when attrs are present
+    const a = node.attrs;
+    if (!a) return true;
+
+    if (node.group === 'material') {
+        const f = FS.mat;
+        if (f.electrodeType !== 'all') {
+            const up = node.id.toUpperCase();
+            if (f.electrodeType === 'anode'  && !up.includes('AN'))  return false;
+            if (f.electrodeType === 'cathode' && !up.includes('CAT')) return false;
+        }
+        if (f.exChemistry.has(a.chemistry))       return false;
+        if (f.exSupplier.has(a.supplier))         return false;
+        if (f.exLocation.has(a.location))         return false;
+        if (f.exAvailability.has(a.availability)) return false;
+        if (f.dateMin && a.date_received < f.dateMin) return false;
+        if (f.dateMax && a.date_received > f.dateMax) return false;
+        if (f.qtyMin !== null && a.quantity_kg < f.qtyMin) return false;
+        if (f.qtyMax !== null && a.quantity_kg > f.qtyMax) return false;
+    }
+
+    if (node.group === 'coating') {
+        const f = FS.coat;
+        if (f.exMadeBy.has(a.made_by))               return false;
+        if (f.dateMin && a.coating_date < f.dateMin)  return false;
+        if (f.dateMax && a.coating_date > f.dateMax)  return false;
+        if (f.gsmMin !== null && a.coat_weight_gsm < f.gsmMin) return false;
+        if (f.gsmMax !== null && a.coat_weight_gsm > f.gsmMax) return false;
+        if (f.porMin !== null && a.porosity        < f.porMin) return false;
+        if (f.porMax !== null && a.porosity        > f.porMax) return false;
+    }
+
+    if (['slp', 'coincell', 'mlp'].includes(node.group)) {
+        const f = FS.cell;
+        if (f.exMadeBy.has(a.made_by))           return false;
+        if (f.exElectrolyte.has(a.electrolyte))   return false;
+        if (f.dateMin && a.date_made < f.dateMin) return false;
+        if (f.dateMax && a.date_made > f.dateMax) return false;
+        if (f.capMin !== null && a.formation_capacity < f.capMin) return false;
+        if (f.capMax !== null && a.formation_capacity > f.capMax) return false;
+        if (f.npMin  !== null && a.np_ratio           < f.npMin)  return false;
+        if (f.npMax  !== null && a.np_ratio           > f.npMax)  return false;
+    }
+
+    return true;
+    }
+
+    function applyVisibility() {
+    const hiddenNodes = new Set();
+
+    // Batch node visibility update
+    nodesDS.update(
+        nodesDS.get().map(node => {
+            const vis = isNodeVisible(node);
+            if (!vis) hiddenNodes.add(node.id);
+            return { id: node.id, hidden: !vis };
+        })
+    );
+
+    // Batch edge visibility update — hide edges where either endpoint is hidden
+    edgesDS.update(
+        edgesDS.get().map(e => ({
+            id    : e.id,
+            hidden: hiddenNodes.has(e.from) || hiddenNodes.has(e.to)
+        }))
+    );
+
+    updateClearButton();
+    }
+
+    // --- Clear button ---
+    function isAnyFilterActive() {
+    const fm = FS.mat, fc = FS.coat, fl = FS.cell;
+    return activeGroups.size < Object.keys(GROUP_COLORS).length
+        || activeProjects.size > 0
+        || fm.electrodeType !== 'all'
+        || fm.exChemistry.size || fm.exSupplier.size
+        || fm.exLocation.size  || fm.exAvailability.size
+        || fm.dateMin || fm.dateMax || fm.qtyMin !== null || fm.qtyMax !== null
+        || fc.exMadeBy.size
+        || fc.dateMin || fc.dateMax
+        || fc.gsmMin !== null || fc.gsmMax !== null
+        || fc.porMin !== null || fc.porMax !== null
+        || fl.exMadeBy.size || fl.exElectrolyte.size
+        || fl.dateMin || fl.dateMax
+        || fl.capMin !== null || fl.capMax !== null
+        || fl.npMin  !== null || fl.npMax  !== null;
+    }
+
+    function updateClearButton() {
+    document.getElementById('clearFilters').style.display =
+        isAnyFilterActive() ? '' : 'none';
+        }
+
+    // --- Range slider ---
+    function makeSlider(label, field, min, max, dec) {
+    const step = dec > 0 ? (1 / Math.pow(10, dec)).toFixed(dec) : '1';
+    return `
+        <div class="f-lbl">${esc(label)}</div>
+        <div class="r-wrap" data-field="${field}">
+            <div class="r-vals">
+                <span class="v-min">${min.toFixed(dec)}</span>
+                <span class="v-max">${max.toFixed(dec)}</span>
+            </div>
+            <div class="r-track-wrap">
+                <div class="r-track"><div class="r-fill"></div></div>
+                <input class="r-min" type="range"
+                       min="${min}" max="${max}" step="${step}"
+                       value="${min}" data-dec="${dec}">
+                <input class="r-max" type="range"
+                       min="${min}" max="${max}" step="${step}"
+                       value="${max}" data-dec="${dec}">
+            </div>
+        </div>`;
+}
+
+// Wires slider inputs. onRange(lo, hi) receives null when at the extreme.
+function wireSlider(wrap, onRange) {
+    if (!wrap) return;
+    const minI = wrap.querySelector('.r-min');
+    const maxI = wrap.querySelector('.r-max');
+    refreshSlider(wrap);
+    [minI, maxI].forEach(inp => inp.addEventListener('input', () => {
+        if (parseFloat(minI.value) > parseFloat(maxI.value)) {
+            if (inp === minI) minI.value = maxI.value;
+            else              maxI.value = minI.value;
+        }
+        refreshSlider(wrap);
+        const lo = parseFloat(minI.value), hi = parseFloat(maxI.value);
+        onRange(
+            lo === parseFloat(minI.min) ? null : lo,
+            hi === parseFloat(maxI.max) ? null : hi
+        );
+        applyVisibility();
+    }));
+}
+
+// Returns HTML string for a checkbox group.
+// setKey is stored as data-set so the change handler can route to the right FS set.
+function makeCbGroup(label, values, setKey) {
+    if (!values?.length) return '';
+    return `<div class="f-lbl">${esc(label)}</div>` +
+        values.map(v => `
+            <label class="f-cb">
+                <input type="checkbox" checked
+                       data-v="${esc(String(v))}" data-set="${setKey}">
+                ${esc(String(v) || '—')}
+            </label>`).join('');
+}
+
+
+// ─── Build filter UI ──────────────────────────────────────────────────────────
+
+function buildFilterUI(fd) {
+
+    // ── MATERIAL ─────────────────────────────────────────────────────────────
+    const matSec = document.getElementById('sec-material');
+    const fm = fd.material;
+    matSec.innerHTML =
+        `<div class="f-lbl">Electrode Type</div>
+         <select class="f-sel" id="elecType">
+             <option value="all">All</option>
+             <option value="anode">Anode</option>
+             <option value="cathode">Cathode</option>
+         </select>` +
+        makeCbGroup('Chemistry',    fm.chemistry,    'exChemistry')    +
+        makeCbGroup('Supplier',     fm.supplier,     'exSupplier')     +
+        `<div class="f-lbl">Date Received</div>
+         <div class="date-row">
+             <input type="date" class="f-date" id="matDateMin">
+             <span style="color:#aaa;font-size:11px;">–</span>
+             <input type="date" class="f-date" id="matDateMax">
+         </div>` +
+        (fm.quantity_kg
+            ? makeSlider('Quantity (kg)', 'mat-qty',
+                         fm.quantity_kg.min, fm.quantity_kg.max, 1)
+            : '') +
+        makeCbGroup('Location',     fm.location,     'exLocation')     +
+        makeCbGroup('Availability', fm.availability, 'exAvailability');
+
+    document.getElementById('elecType').addEventListener('change', e => {
+        FS.mat.electrodeType = e.target.value; applyVisibility();
+    });
+    document.getElementById('matDateMin').addEventListener('change', e => {
+        FS.mat.dateMin = e.target.value || null; applyVisibility();
+    });
+    document.getElementById('matDateMax').addEventListener('change', e => {
+        FS.mat.dateMax = e.target.value || null; applyVisibility();
+    });
+    wireSlider(matSec.querySelector('[data-field="mat-qty"]'),
+        (lo, hi) => { FS.mat.qtyMin = lo; FS.mat.qtyMax = hi; });
+
+    matSec.querySelectorAll('.f-cb input').forEach(cb =>
+        cb.addEventListener('change', () => {
+            const set = FS.mat[cb.dataset.set];
+            if (!set) return;
+            cb.checked ? set.delete(cb.dataset.v) : set.add(cb.dataset.v);
+            applyVisibility();
+        })
+    );
+
+    // ── COATING ───────────────────────────────────────────────────────────────
+    const coatSec = document.getElementById('sec-coating');
+    const fc = fd.coating;
+    coatSec.innerHTML =
+        `<div class="f-lbl">Coating Date</div>
+         <div class="date-row">
+             <input type="date" class="f-date" id="coatDateMin">
+             <span style="color:#aaa;font-size:11px;">–</span>
+             <input type="date" class="f-date" id="coatDateMax">
+         </div>` +
+        makeCbGroup('Made By', fc.made_by, 'exMadeBy') +
+        (fc.coat_weight_gsm
+            ? makeSlider('Coat Weight (GSM)', 'coat-gsm',
+                         fc.coat_weight_gsm.min, fc.coat_weight_gsm.max, 2)
+            : '') +
+        (fc.porosity
+            ? makeSlider('Porosity (%)', 'coat-por',
+                         fc.porosity.min, fc.porosity.max, 2)
+            : '');
+
+    document.getElementById('coatDateMin').addEventListener('change', e => {
+        FS.coat.dateMin = e.target.value || null; applyVisibility();
+    });
+    document.getElementById('coatDateMax').addEventListener('change', e => {
+        FS.coat.dateMax = e.target.value || null; applyVisibility();
+    });
+    wireSlider(coatSec.querySelector('[data-field="coat-gsm"]'),
+        (lo, hi) => { FS.coat.gsmMin = lo; FS.coat.gsmMax = hi; });
+    wireSlider(coatSec.querySelector('[data-field="coat-por"]'),
+        (lo, hi) => { FS.coat.porMin = lo; FS.coat.porMax = hi; });
+
+    coatSec.querySelectorAll('.f-cb input').forEach(cb =>
+        cb.addEventListener('change', () => {
+            cb.checked ? FS.coat.exMadeBy.delete(cb.dataset.v)
+                       : FS.coat.exMadeBy.add(cb.dataset.v);
+            applyVisibility();
+        })
+    );
+
+    // ── CELL ──────────────────────────────────────────────────────────────────
+    const cellSec = document.getElementById('sec-cell');
+    const fl = fd.cell;
+    cellSec.innerHTML =
+        `<div class="f-lbl">Date Made</div>
+         <div class="date-row">
+             <input type="date" class="f-date" id="cellDateMin">
+             <span style="color:#aaa;font-size:11px;">–</span>
+             <input type="date" class="f-date" id="cellDateMax">
+         </div>` +
+        makeCbGroup('Made By',     fl.made_by,    'exMadeBy')      +
+        makeCbGroup('Electrolyte', fl.electrolyte, 'exElectrolyte') +
+        (fl.formation_capacity
+            ? makeSlider('Formation Capacity (mAh)', 'cell-cap',
+                         fl.formation_capacity.min, fl.formation_capacity.max, 0)
+            : '') +
+        (fl.np_ratio
+            ? makeSlider('N:P Ratio', 'cell-np',
+                         fl.np_ratio.min, fl.np_ratio.max, 2)
+            : '');
+
+    document.getElementById('cellDateMin').addEventListener('change', e => {
+        FS.cell.dateMin = e.target.value || null; applyVisibility();
+    });
+    document.getElementById('cellDateMax').addEventListener('change', e => {
+        FS.cell.dateMax = e.target.value || null; applyVisibility();
+    });
+    wireSlider(cellSec.querySelector('[data-field="cell-cap"]'),
+        (lo, hi) => { FS.cell.capMin = lo; FS.cell.capMax = hi; });
+    wireSlider(cellSec.querySelector('[data-field="cell-np"]'),
+        (lo, hi) => { FS.cell.npMin = lo; FS.cell.npMax = hi; });
+
+    // Split cell checkboxes: first N belong to made_by, the rest to electrolyte
+    const cellCbs   = [...cellSec.querySelectorAll('.f-cb input')];
+    const nMadeBy   = fl.made_by?.length ?? 0;
+    cellCbs.forEach((cb, i) =>
+        cb.addEventListener('change', () => {
+            const set = i < nMadeBy ? FS.cell.exMadeBy : FS.cell.exElectrolyte;
+            cb.checked ? set.delete(cb.dataset.v) : set.add(cb.dataset.v);
+            applyVisibility();
+        })
+    );
+}
+
+// ─── Project filter UI ────────────────────────────────────────────────────────
+
+function buildProjectFilters(projectNodes) {
+    const sec = document.getElementById('sec-project');
+    if (!projectNodes.length) {
+        sec.innerHTML = '<em style="font-size:12px;color:#aaa;">No projects</em>';
+        return;
+    }
+    sec.innerHTML = projectNodes.map(n => `
+        <label class="f-cb">
+            <input type="checkbox" data-pid="${esc(n.id)}">
+            ${esc(n.id.replace('PROJECT-', ''))}
+        </label>`).join('');
+
+    sec.querySelectorAll('input').forEach(cb =>
+        cb.addEventListener('change', () => {
+            cb.checked ? activeProjects.add(cb.dataset.pid)
+                       : activeProjects.delete(cb.dataset.pid);
+            updateProjectVisibleNodes();
+            applyVisibility();
+        })
+    );
+}
+
+// ─── Reset all filters ────────────────────────────────────────────────────────
+
+function resetFilters() {
+    // Groups & projects
+    Object.keys(GROUP_COLORS).forEach(g => activeGroups.add(g));
+    activeProjects.clear();
+    updateProjectVisibleNodes();
+
+    // Attribute filter state
+    Object.assign(FS.mat, {
+        electrodeType:'all', exChemistry:new Set(), exSupplier:new Set(),
+        exLocation:new Set(), exAvailability:new Set(),
+        dateMin:null, dateMax:null, qtyMin:null, qtyMax:null
+    });
+    Object.assign(FS.coat, {
+        exMadeBy:new Set(), dateMin:null, dateMax:null,
+        gsmMin:null, gsmMax:null, porMin:null, porMax:null
+    });
+    Object.assign(FS.cell, {
+        exMadeBy:new Set(), exElectrolyte:new Set(),
+        dateMin:null, dateMax:null, capMin:null, capMax:null, npMin:null, npMax:null
+    });
+
+    // UI: checkboxes → all checked; project checkboxes → unchecked
+    document.querySelectorAll('#sec-nodeType input[type=checkbox], .f-cb input[type=checkbox]')
+            .forEach(cb => { cb.checked = true; });
+    document.querySelectorAll('#sec-project input[type=checkbox]')
+            .forEach(cb => { cb.checked = false; });
+
+    document.querySelectorAll('select.f-sel, #elecType, #cellTypeSelect')
+            .forEach(s => { s.selectedIndex = 0; });
+    document.querySelectorAll('.f-date')
+            .forEach(d => { d.value = ''; });
+    document.querySelectorAll('.r-wrap').forEach(wrap => {
+        const minI = wrap.querySelector('.r-min');
+        const maxI = wrap.querySelector('.r-max');
+        if (minI) minI.value = minI.min;
+        if (maxI) maxI.value = maxI.max;
+        refreshSlider(wrap);
+    });
+
+    applyVisibility();
+}
+
+
+// --- Zoom --- 
+    function onZoom(params) {
+        currentScale = params.scale;
+        applyNodeStyles(currentSelectedPath);
+    }
     //--- Selection handling ---
     function clearSelection() {
         currentSelectedPath = null;
@@ -166,20 +714,15 @@
         applyNodeStyles(null);
     }
 
-    // Re-applies all node styles with the updated scale on every zoom tick.
-    // Uses a single batched update regardless of selection state.
-    function onZoom(params) {
-        currentScale = params.scale;
-        applyNodeStyles(currentSelectedPath);
-    }
-    
-    fetch('/api/graph')
-        .then(res => res.json())
-        .then(data => {
+// --- The traceability graph 
+    Promise.all([
+        fetch('/api/graph').then(r => r.json()),
+        fetch('/api/filters').then(r => r.json())
+    ]).then(([graphData, filterData]) => {
             
             nodesDS = new vis.DataSet(data.nodes.map(n => ({
                 ...n,
-                level:        groupLevels[n.group],   // force same-group vertical alignment
+                level:        groupLevels[n.group],  
                 label:        shortLabel(n.id, n.group),
                 title:        n.id + (n.title ? ' — ' + n.title : ''),
                 shape:        'dot',
@@ -215,6 +758,10 @@
             
             network.on('zoom', onZoom);
 
+            // Build all filter panels
+            buildFilterUI(filterData);
+            buildProjectFilters(graphData.nodes.filter(n => n.group === 'project'));
+
             // ---Click handler---
             network.on("click", async function(params) {
                 if (pulseInterval) clearInterval(pulseInterval);
@@ -233,13 +780,19 @@
                 const selectedPath = new Set([...path, ...downstream]);
                 currentSelectedPath = selectedPath;          // expose to onZoom
 
+                // Collect all edges within the selected subgraph
+            const pathEdgeIds = new Set();
+            for (let i = 0; i < path.length - 1; i++) {
+                const e = allEdges.find(e => e.from === path[i] && e.to === path[i + 1]);
+                if (e) pathEdgeIds.add(e.id);
+            }
+            allEdges
+                .filter(e => selected.has(e.from) && selected.has(e.to) && !e.dashes)
+                .forEach(e => pathEdgeIds.add(e.id));
+
                 // Dim every node not in the set; highlight those that are — ONE redraw.
                 applyNodeStyles(selectedPath);
-
-                // Collect edges that connect nodes within the highlighted set.
-                const pathEdgeIds = allEdges
-                    .filter(e => !e.dashes && selectedPath.has(e.from) && selectedPath.has(e.to))
-                    .map(e => e.id);
+                resetEdgeStyles();  // reset all edges to default color/width
 
                 // Pulsing animation along the path edges
                 let bright = false;
@@ -271,6 +824,9 @@
 
 
 </script>
+
+
+// ─── Cycling Data Graph ─────────────────────────────────────────────────────
 <div style="margin-top: 40px;">
     <div class="result">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
