@@ -6,7 +6,7 @@
 
 <div style="display: flex; gap: 16px; margin-top: 16px; align-items: flex-start;">
 
-    // --- Filter panel ---
+    <!-- Filter panel -->
     <div id="filterPanel"
          style="width: 195px; flex-shrink: 0; position: sticky; top: 20px;
                 max-height: calc(100vh - 48px); overflow-y: auto;"
@@ -57,10 +57,10 @@
 
     </div>
     
-    // ---  Graph canvas ---
+    <!-- --- Graph canvas -->
     <div id="network" style="flex: 1; min-width: 0; height: 700px; background: #0a0e1a; border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);"></div>
 
-    // --- Node card ---
+    <!-- --- Node card --- -->
     <div id="nodeCard" style="display: none; width: 320px; flex-shrink: 0; position: sticky; top: 20px;" class="result">
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
             <h3 id="nodeCardTitle" style="margin: 0;"></h3>
@@ -149,6 +149,7 @@ function shortLabel(id, group) {
     if (group === 'coating')    return id.split('-').slice(-1)[0].replace('C', 'Coat ');
     if (group === 'slp')        return 'SLP-' + id.split('-SLP-')[1];
     if (group === 'coincell')   return 'CC-' + id.split('-CC-')[1];
+    if (group === 'mlp')        return 'MLP-' + id.split('-MLP-')[1];
     return id;
 }
 
@@ -249,6 +250,7 @@ function esc(str) {
     const hide = sec.style.display !== 'none';
     sec.style.display = hide ? 'none' : '';
     chev.classList.toggle('up', hide);
+    }
     
 // --- Path finding ---
     function findPathToRoot(targetId, edges) {
@@ -256,7 +258,6 @@ function esc(str) {
         // Excludes dashed project-reference edges — only follows real traceability links.
         const path = [targetId];
         let current = targetId;
-        let guard = 0;
         for (let guard = 0; guard < 20; guard++) {
             const parent = edges.find(e => e.to === current && !e.dashes);
             if (!parent) break;
@@ -313,7 +314,7 @@ function esc(str) {
     }
         // Reset all edges in ONE batched update.
     function resetEdgeStyles() {
-        nodesDS.update(
+        edgesDS.update(
             edgesDS.get().map(e => ({
                 id:    e.id,
                 color: { color: EDGE_RESET_COLOR },
@@ -420,7 +421,7 @@ function esc(str) {
     // --- Clear button ---
     function isAnyFilterActive() {
     const fm = FS.mat, fc = FS.coat, fl = FS.cell;
-    return activeGroups.size < Object.keys(GROUP_COLORS).length
+    return activeGroups.size < Object.keys(groupColors).length
         || activeProjects.size > 0
         || fm.electrodeType !== 'all'
         || fm.exChemistry.size || fm.exSupplier.size
@@ -442,6 +443,24 @@ function esc(str) {
         }
 
     // --- Range slider ---
+function refreshSlider(wrap) {
+    const minI = wrap.querySelector('.r-min');
+    const maxI = wrap.querySelector('.r-max');
+    const fill = wrap.querySelector('.r-fill');
+    const vMin = wrap.querySelector('.v-min');
+    const vMax = wrap.querySelector('.v-max');
+    if (!minI || !maxI) return;
+    const dec = parseInt(minI.dataset.dec ?? 0);
+    const lo  = parseFloat(minI.value);
+    const hi  = parseFloat(maxI.value);
+    const min = parseFloat(minI.min);
+    const max = parseFloat(maxI.max);
+    const pct = v => ((v - min) / (max - min)) * 100;
+    if (fill) { fill.style.left = pct(lo) + '%'; fill.style.right = (100 - pct(hi)) + '%'; }
+    if (vMin) vMin.textContent = lo.toFixed(dec);
+    if (vMax) vMax.textContent = hi.toFixed(dec);
+}
+
     function makeSlider(label, field, min, max, dec) {
     const step = dec > 0 ? (1 / Math.pow(10, dec)).toFixed(dec) : '1';
     return `
@@ -659,7 +678,7 @@ function buildProjectFilters(projectNodes) {
 
 function resetFilters() {
     // Groups & projects
-    Object.keys(GROUP_COLORS).forEach(g => activeGroups.add(g));
+    Object.keys(groupColors).forEach(g => activeGroups.add(g));
     activeProjects.clear();
     updateProjectVisibleNodes();
 
@@ -720,7 +739,7 @@ function resetFilters() {
         fetch('/api/filters').then(r => r.json())
     ]).then(([graphData, filterData]) => {
             
-            nodesDS = new vis.DataSet(data.nodes.map(n => ({
+            nodesDS = new vis.DataSet(graphData.nodes.map(n => ({
                 ...n,
                 level:        groupLevels[n.group],  
                 label:        shortLabel(n.id, n.group),
@@ -733,7 +752,7 @@ function resetFilters() {
                 shadow:       { enabled: true, color: groupColors[n.group].background, size: 10, x: 0, y: 0 }
             })));
 
-            edgesDS = new vis.DataSet(data.edges.map((e, i) => ({
+            edgesDS = new vis.DataSet(graphData.edges.map((e, i) => ({
                 ...e,
                 id:     i,
                 color:  { color: EDGE_RESET_COLOR },
@@ -787,7 +806,7 @@ function resetFilters() {
                 if (e) pathEdgeIds.add(e.id);
             }
             allEdges
-                .filter(e => selected.has(e.from) && selected.has(e.to) && !e.dashes)
+                .filter(e => selectedPath.has(e.from) && selectedPath.has(e.to) && !e.dashes)
                 .forEach(e => pathEdgeIds.add(e.id));
 
                 // Dim every node not in the set; highlight those that are — ONE redraw.
@@ -798,12 +817,10 @@ function resetFilters() {
                 let bright = false;
                 pulseInterval = setInterval(() => {
                     bright = !bright;
-                    pathEdgeIds.forEach(id => edgesDS.update({
-                        id,
-                        color: { color: bright ? '#00e5ff' : '#0077aa' },
-                        width: bright ? 4 : 2.5
-                    }));
-                }, 450);
+                    const colour = bright ? '#00e5ff' : '#0077aa';
+                    const width  = bright ? 4 : 2.5;
+                edgesDS.update([...pathEdgeIds].map(id => ({ id, color: { color: colour }, width })));
+            }, 450);
 
                 // Load and show the card
                 const res = await fetch(`/api/card/${nodeId}`);
@@ -812,11 +829,11 @@ function resetFilters() {
 
                 document.getElementById('nodeCardTitle').textContent = cardData.record_id;
                 document.getElementById('nodeCardFields').innerHTML = Object.entries(cardData.record)
-                    .map(([k, v]) => `<div class="row"><span class="label">${k}</span><span class="value">${v}</span></div>`)
+                    .map(([k, v]) => `<div class="row"><span class="label">${esc(k)}</span><span class="value">${esc(v)}</span></div>`)
                     .join('');
                 document.getElementById('nodeCardChain').innerHTML = cardData.chain.length
                     ? `<div style="font-size:12px;font-weight:700;color:#1b3a6b;margin-bottom:6px;">TRACEABILITY CHAIN</div>` +
-                      cardData.chain.map(c => `<div style="font-size:13px;padding:3px 0;">${c}</div>`).join('')
+                      cardData.chain.map(c => `<div style="font-size:13px;padding:3px 0;">${esc(c)}</div>`).join('')
                     : '';
                 document.getElementById('nodeCard').style.display = 'block';
             });
