@@ -27,6 +27,9 @@
     <div style="padding: 20px; background: #f7f7f7; text-align: center;">
         <img src="data:image/png;base64,{{ qr_base64 }}" alt="QR code for {{ record_id }}" style="width: 140px; height: 140px;">
         <p style="font-size: 11px; color: #999; margin-top: 8px;">Scan to open this card</p>
+        {% if record_type in ("slp", "coincell", "mlp") %}
+        <a href="/card/{{ record_id }}/lineage" style="display: inline-block; margin-top: 6px; font-size: 14px; font-weight: 600; color: #2e5fa3;">Open lineage &amp; passport card →</a>
+        {% endif %}
     </div>
 </div>
 <div id="cyclingSection" style="display:none; margin-top: 24px;">
@@ -37,39 +40,42 @@
 </div>
 
 <script>
-    fetch(`/api/cycling/{{ record_id }}`)
+    // Capacity per discharge from the latest uploaded cycling file (same data as the graph page)
+    fetch(`/api/cycling/{{ record_id }}/summary`)
         .then(res => {
             if (!res.ok) throw new Error('No cycling data');
             return res.json();
         })
         .then(data => {
+            const discharge = data.discharge_capacity_mah || [];
+            if (!discharge.length) return;
             document.getElementById('cyclingSection').style.display = 'block';
             new Chart(document.getElementById('cyclingChart'), {
                 type: 'line',
                 data: {
-                    labels: data.capacity_mah.map((_, i) => i),
+                    labels: discharge.map((_, i) => i + 1),
                     datasets: [{
-                        label: 'Voltage (V) vs Capacity (mAh)',
-                        data: data.voltage_v,
+                        label: 'Discharge capacity (mAh)',
+                        data: discharge,
                         borderColor: '#2e5fa3',
                         backgroundColor: 'rgba(46,95,163,0.08)',
                         fill: true,
                         tension: 0.1,
-                        pointRadius: 0
+                        pointRadius: 2
                     }]
                 },
                 options: {
                     responsive: true,
                     plugins: { legend: { display: true } },
                     scales: {
-                        x: { title: { display: true, text: 'Sample index' } },
-                        y: { title: { display: true, text: 'Voltage (V)' } }
+                        x: { title: { display: true, text: 'Discharge #' } },
+                        y: { title: { display: true, text: 'Capacity (mAh)' } }
                     }
                 }
             });
         })
         .catch(() => {
-    // No cycling data for this record — section stays hidden
-});
+            // No cycling data for this record — section stays hidden
+        });
 </script>
 {% endblock %}
