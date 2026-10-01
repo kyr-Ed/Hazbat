@@ -136,6 +136,20 @@
     border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.25);
 }
 </style>
+    <!-- Quick-view panel for cells: filled in by static/js/node_panel.js -->
+    <aside id="nodePanel" class="result node-panel" hidden aria-live="polite"></aside>
+</div>
+
+<script src="/static/js/node_panel.js"></script>
+<script>
+    function shortLabel(id, group) {
+        if (group === 'project') return id.replace('PROJECT-', '');
+        if (group === 'material') return id;
+        if (group === 'coating') return id.split('-').slice(-1)[0].replace('C', 'Coat ');
+        if (group === 'slp') return 'SLP-' + id.split('-SLP-')[1];
+        if (group === 'coincell') return 'CC-' + id.split('-CC-')[1];
+        return id;
+    }
 
 
 
@@ -265,8 +279,26 @@ function esc(str) {
             if (!parent) break;
             path.unshift(parent.from);
             current = parent.from;
+    function findAncestors(targetId, edges) {
+        // Walk backwards (child -> parent) through EVERY parent, not just the first.
+        // An MLP has two parents (cathode and anode coating), so both branches
+        // back to their materials are included.
+        // Excludes dashed project-reference edges — only follows real traceability links.
+        const ancestors = new Set([targetId]);
+        const queue = [targetId];
+
+        while (queue.length) {
+            const current = queue.shift();
+            edges
+                .filter(edge => edge.to === current && !edge.dashes)
+                .forEach(edge => {
+                    if (!ancestors.has(edge.from)) {
+                        ancestors.add(edge.from);
+                        queue.push(edge.from);
+                    }
+                });
         }
-        return path;
+        return ancestors;
     }
     function findDescendants(startId, edges) {
         // Follow real traceability links forward, from parent to child.
@@ -296,6 +328,50 @@ function esc(str) {
     function buildNodeStyle(node, isOnPath) {
         const c = groupColors[node.group];
         return {
+    function clearSelection() {
+        currentSelectedPath = null;
+        document.dispatchEvent(new CustomEvent('hazbat:clear'));   // closes the side panel
+        if (pulseInterval) clearInterval(pulseInterval);
+        edgesDS.forEach(e => edgesDS.update({ id: e.id, color: { color: 'rgba(120,140,200,0.35)' }, width: 1.5 }));
+        nodesDS.forEach(node => setNodeStyle(node, true));
+    }
+
+    const groupColors = {
+            material: { background: '#00e5ff', border: '#00b8cc' },
+            coating:  { background: '#7c4dff', border: '#5c35cc' },
+            slp:      { background: '#00ff9d', border: '#00cc7d' },
+            coincell: { background: '#ff6ec7', border: '#cc5599' },
+            mlp:      { background: '#ffb800', border: '#cc9300' },
+            project:  { background: '#ffffff', border: '#888888' }
+            };
+
+    // Assign level to groups for easier understanding
+    const groupLevels = {
+            material: 0,
+            coating: 1,
+            slp: 2,
+            coincell: 2,
+            mlp: 2,
+            project: 3
+    };
+
+
+    function rgba(hex, opacity) {
+        const value = parseInt(hex.slice(1), 16);
+        return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${opacity})`;
+    }
+
+    // isOnPath = true  → node is highlighted (or no selection is active, i.e. normal state)
+    // isOnPath = false → node is dimmed because it is off the selected path
+    function setNodeStyle(node, isOnPath) {
+        const colors = groupColors[node.group];
+
+        // Scale the border so it remains proportional to node size at any zoom level.
+        const border = isOnPath
+            ? BASE_BORDER.selected * currentScale
+            : BASE_BORDER.dimmed   * currentScale;
+        
+        nodesDS.update({
             id: node.id,
             borderWidth: (isOnPath ? BASE_BORDER.selected : BASE_BORDER.dimmed) * currentScale,
             color: isOnPath
@@ -835,6 +911,7 @@ function resetFilters() {
 
             // ---Click handler---
             network.on("click", async function(params) {
+            network.on("click", function(params) {
                 if (pulseInterval) clearInterval(pulseInterval);
 
                 if (params.nodes.length === 0) {
@@ -864,6 +941,31 @@ function resetFilters() {
                 // Dim every node not in the set; highlight those that are — ONE redraw.
                 applyNodeStyles(selectedPath);
                 resetEdgeStyles();  // reset all edges to default color/width
+                // Reset all edges/nodes first
+                edgesDS.forEach(e => edgesDS.update({ id: e.id, color: { color: 'rgba(120,140,200,0.35)' }, width: 1.5 }));
+                // nodesDS.forEach(n => nodesDS.update({ id: n.id, borderWidth: 2 }));
+                nodesDS.forEach(node => setNodeStyle(node, true));
+
+                // Trace every manufacturing branch back to its root material(s)
+                const allEdges = edgesDS.get();
+                const upstreamNodes = findAncestors(nodeId, allEdges);
+
+                // Include the upstream branches and every downstream traceability node.
+                const downstreamNodes = findDescendants(nodeId, allEdges);
+                const selectedPath = new Set([...upstreamNodes, ...downstreamNodes]);
+                currentSelectedPath = selectedPath
+                
+                // Highlight all real edges within the selected traceability branch.
+                const pathEdgeIds = allEdges
+                    .filter(edge =>
+                        !edge.dashes &&
+                        selectedPath.has(edge.from) &&
+                        selectedPath.has(edge.to)
+                    )
+                    .map(edge => edge.id);
+
+                // Brighten selected/upstream/downstream nodes and dim all others.
+                nodesDS.forEach(node => setNodeStyle(node, selectedPath.has(node.id)));
 
                 // Pulsing animation along the path edges
                 let bright = false;
@@ -888,6 +990,8 @@ function resetFilters() {
                       cardData.chain.map(c => `<div style="font-size:13px;padding:3px 0;">${esc(c)}</div>`).join('')
                     : '';
                 document.getElementById('nodeCard').style.display = 'block';
+                // Tell the side panel which node was picked (static/js/node_panel.js)
+                document.dispatchEvent(new CustomEvent('hazbat:select', { detail: { id: nodeId } }));
             });
         });
 
