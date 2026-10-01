@@ -57,7 +57,7 @@
 
     </div>
     
-    <!-- --- Graph canvas -->
+    <!-- --- Graph canvas --- -->
     <div id="network" style="flex: 1; min-width: 0; height: 700px; background: #0a0e1a; border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);"></div>
 
     <!-- --- Node card --- -->
@@ -181,6 +181,8 @@ const BASE_BORDER = {
 
 const EDGE_RESET_COLOR = 'rgba(120,140,200,0.35)';
 
+const CELL_GROUPS = new Set(['slp', 'coincell', 'mlp']);
+
 
 let network, nodesDS, edgesDS, pulseInterval;
 
@@ -268,19 +270,24 @@ function esc(str) {
     }
     function findDescendants(startId, edges) {
         // Follow real traceability links forward, from parent to child.
+        const adj = new Map();
+        edges.forEach(e => {
+            if (!e.dashes) {
+                if (!adj.has(e.from)) adj.set(e.from, []);
+                adj.get(e.from).push(e.to);
+            }
+        });
+
         const descendants = new Set([startId]);
         const queue = [startId];
-
         while (queue.length) {
             const current = queue.shift();
-            edges
-                .filter(e => e.from === current && !e.dashes)
-                .forEach(e => {
-                    if (!descendants.has(e.to)) {
-                        descendants.add(e.to);
-                        queue.push(e.to);
-                    }
-                });
+            (adj.get(current) || []).forEach(to => {
+                if (!descendants.has(to)) {
+                    descendants.add(to);
+                    queue.push(to);
+                }
+            });
         }
         return descendants;
     }
@@ -380,7 +387,7 @@ function esc(str) {
         if (f.porMax !== null && a.porosity        > f.porMax) return false;
     }
 
-    if (['slp', 'coincell', 'mlp'].includes(node.group)) {
+    if (CELL_GROUPS.has(node.group)) {
         const f = FS.cell;
         if (f.exMadeBy.has(a.made_by))           return false;
         if (f.exElectrolyte.has(a.electrolyte))   return false;
@@ -414,9 +421,16 @@ function esc(str) {
             hidden: hiddenNodes.has(e.from) || hiddenNodes.has(e.to)
         }))
     );
+        //Close card if selected node hidden
+    if (currentSelectedPath !== null) {
+        const visibleSelected = [...currentSelectedPath].some(id => !hiddenNodes.has(id));
+        if (!visibleSelected) clearSelection();
+    }
 
     updateClearButton();
     }
+
+    
 
     // --- Clear button ---
     function isAnyFilterActive() {
@@ -461,7 +475,7 @@ function refreshSlider(wrap) {
     if (vMax) vMax.textContent = hi.toFixed(dec);
 }
 
-    function makeSlider(label, field, min, max, dec) {
+function makeSlider(label, field, min, max, dec) {
     const step = dec > 0 ? (1 / Math.pow(10, dec)).toFixed(dec) : '1';
     return `
         <div class="f-lbl">${esc(label)}</div>
@@ -518,6 +532,44 @@ function makeCbGroup(label, values, setKey) {
 
 
 // ─── Build filter UI ──────────────────────────────────────────────────────────
+function buildNodeTypeFilter() {
+    const sec = document.getElementById('sec-nodeType');
+    const nonProjectGroups = Object.keys(groupColors).filter(g => g !== 'project');
+    sec.innerHTML =
+        `<div class="f-lbl">Cell Type</div>
+         <select class="f-sel" id="cellTypeSelect">
+             <option value="all">All cells</option>
+             <option value="slp">SLP</option>
+             <option value="coincell">Coin Cell</option>
+             <option value="mlp">MLP</option>
+         </select>` +
+        nonProjectGroups.map(g => {
+            const c = groupColors[g];
+            return `<label class="f-cb">
+                <input type="checkbox" checked data-grp="${g}">
+                <span style="display:inline-block;width:10px;height:10px;border-radius:50%;
+                             background:${c.background};border:1px solid ${c.border};
+                             flex-shrink:0;"></span>
+                ${esc(groupNames[g])}
+            </label>`;
+        }).join('');
+
+    document.getElementById('cellTypeSelect').addEventListener('change', e => {
+        const val = e.target.value;
+        ['slp', 'coincell', 'mlp'].forEach(g => {
+            val === 'all' || val === g ? activeGroups.add(g) : activeGroups.delete(g);
+        });
+        applyVisibility();
+    });
+
+    sec.querySelectorAll('input[type=checkbox]').forEach(cb =>
+        cb.addEventListener('change', () => {
+            cb.checked ? activeGroups.add(cb.dataset.grp)
+                       : activeGroups.delete(cb.dataset.grp);
+            applyVisibility();
+        })
+    );
+}
 
 function buildFilterUI(fd) {
 
