@@ -3,6 +3,7 @@ import psycopg2
 import bcrypt
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from HAZbot import ask_ai_for_sql
 import pandas as pd
@@ -10,6 +11,7 @@ from fastapi import UploadFile, File
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import RedirectResponse, Response
 import qrcode
+import jinja2
 import io
 import base64
 import os
@@ -20,6 +22,17 @@ BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "dev-secret-change-this-later"))
 templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+def dash(value):
+    """Template filter: {{ value | dash }} shows "—" for blank or missing values."""
+    if value is None or isinstance(value, jinja2.Undefined) or value == "":
+        return "—"
+    return value
+
+
+templates.env.filters["dash"] = dash
 def get_connection():
     database_url = os.getenv("DATABASE_URL")
     if database_url:
@@ -1213,11 +1226,17 @@ def cycling_summary(record_id: str):
             efficiency.append(round((cap2 / cap1) * 100, 2))
             eff_cycle_numbers.append(c2)
 
+    # State of health: latest discharge capacity as a % of the first discharge
+    discharge = [cap for _, cap, chg in real_cycles if chg is False]
+    soh_pct = round(discharge[-1] / discharge[0] * 100, 1) if len(discharge) >= 2 and discharge[0] > 0 else None
+
     return JSONResponse({
         "cycles": cycles,
         "capacity_per_cycle": capacity_per_cycle,
         "efficiency": efficiency,
-        "efficiency_cycle_numbers": eff_cycle_numbers
+        "efficiency_cycle_numbers": eff_cycle_numbers,
+        "discharge_capacity_mah": discharge,
+        "soh_pct": soh_pct
     })
 
 
@@ -1255,84 +1274,130 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/", status_code=303)
+# --- Record cards: one lookup shared by /card, /api/card and the graph panel ---
+CELL_TYPES = ("slp", "coincell", "mlp")
+
+# For each record type: (table, ID column, [(column, label shown on the card), ...])
+CARD_FIELDS = {
+    "material": ("tbl_materials", "material_id", [
+        ("chemistry", "Chemistry"), ("supplier", "Supplier"), ("date_received", "Date Received"),
+        ("quantity_kg", "Quantity (kg)"), ("location", "Location"), ("availability", "Availability"),
+        ("notes", "Notes")]),
+    "coating": ("tbl_coating", "coating_id", [
+        ("material_id", "Material ID"), ("project", "Project"), ("coating_date", "Coating Date"),
+        ("made_by", "Made By"), ("coat_weight_gsm", "GSM"), ("porosity", "Porosity"), ("notes", "Notes")]),
+    "slp": ("tbl_slp", "slp_id", [
+        ("coating_id", "Coating ID"), ("project", "Project"), ("date_made", "Date Made"),
+        ("made_by", "Made By"), ("electrolyte", "Electrolyte"), ("formation_capacity", "Formation Capacity"),
+        ("np_ratio", "N/P Ratio"), ("notes", "Notes")]),
+    "coincell": ("tbl_coincell", "coincell_id", [
+        ("coating_id", "Coating ID"), ("project", "Project"), ("date_made", "Date Made"),
+        ("made_by", "Made By"), ("electrolyte", "Electrolyte"), ("formation_capacity", "Formation Capacity"),
+        ("gsm", "GSM"), ("notes", "Notes"), ("cell_type", "Cell Type")]),
+    "mlp": ("tbl_mlp", "mlp_id", [
+        ("cat_coating_id", "Cathode Coating"), ("an_coating_id", "Anode Coating"), ("project", "Project"),
+        ("date_made", "Date Made"), ("cell_capacity", "Cell Capacity"), ("electrolyte", "Electrolyte"),
+        ("ac_area_ratio", "A/C Area Ratio")]),
+}
+
+# The six quick-view fields shown in the graph side panel, per cell type.
+# "Chemistry" is looked up from the material(s) behind the cell's coating(s).
+PANEL_FIELDS = {
+    "slp":      ["Chemistry", "Formation Capacity", "Electrolyte", "N/P Ratio", "Project", "Date Made"],
+    "coincell": ["Chemistry", "Formation Capacity", "Electrolyte", "Cell Type", "Project", "Date Made"],
+    "mlp":      ["Chemistry", "Cell Capacity", "Electrolyte", "A/C Area Ratio", "Project", "Date Made"],
+}
+
+
+def fetch_card_record(cur, record_type: str, record_id: str):
+    """Look up one record. Returns (record, chain): record is {label: value}
+    (None if not found) and chain lists the linked records."""
+    table, id_column, fields = CARD_FIELDS[record_type]
+    columns = ", ".join(column for column, _ in fields)
+    # Table/column names come from CARD_FIELDS above, never from the user.
+    cur.execute(f"SELECT {columns} FROM {table} WHERE {id_column} = %s", (record_id,))
+    row = cur.fetchone()
+    if not row:
+        return None, []
+    record = {label: value for (_, label), value in zip(fields, row)}
+
+    chain = []
+    if record_type == "material":
+        cur.execute("SELECT coating_id FROM tbl_coating WHERE material_id = %s", (record_id,))
+        chain += [f"Coating: {r[0]}" for r in cur.fetchall()]
+    elif record_type == "coating":
+        cur.execute("SELECT slp_id FROM tbl_slp WHERE coating_id = %s", (record_id,))
+        chain += [f"SLP: {r[0]}" for r in cur.fetchall()]
+        cur.execute("SELECT coincell_id FROM tbl_coincell WHERE coating_id = %s", (record_id,))
+        chain += [f"CoinCell: {r[0]}" for r in cur.fetchall()]
+        cur.execute("SELECT mlp_id FROM tbl_mlp WHERE cat_coating_id = %s OR an_coating_id = %s", (record_id, record_id))
+        chain += [f"MLP: {r[0]}" for r in cur.fetchall()]
+    elif record_type in ("slp", "coincell"):
+        chain.append(f"Coating: {record['Coating ID']}")
+    elif record_type == "mlp":
+        chain.append(f"Cathode: {record['Cathode Coating']}")
+        chain.append(f"Anode: {record['Anode Coating']}")
+    return record, chain
+
+
+def coating_chemistry(cur, coating_id: str):
+    """Chemistry of the material a coating was made from (None if unknown)."""
+    cur.execute(
+        "SELECT m.chemistry FROM tbl_coating c JOIN tbl_materials m ON m.material_id = c.material_id "
+        "WHERE c.coating_id = %s", (coating_id,)
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def panel_fields(cur, record_type: str, record: dict):
+    """The six quick-view fields for a cell, as [[label, value], ...] (value None if blank)."""
+    if record_type == "mlp":
+        cathode = coating_chemistry(cur, record["Cathode Coating"]) or "?"
+        anode = coating_chemistry(cur, record["Anode Coating"]) or "?"
+        chemistry = f"{cathode} ‖ {anode}"
+    else:
+        chemistry = coating_chemistry(cur, record["Coating ID"])
+    values = {**record, "Chemistry": chemistry}
+    return [[label, None if values.get(label) is None else str(values[label])]
+            for label in PANEL_FIELDS[record_type]]
+
+
+def make_qr_png(url: str) -> bytes:
+    """PNG bytes of a QR code that opens the given URL."""
+    buf = io.BytesIO()
+    qrcode.make(url).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def card_path(record_id: str, record_type: str) -> str:
+    """Page a QR code should open: the lineage & passport page for cells, the basic card otherwise."""
+    if record_type in CELL_TYPES:
+        return f"/card/{record_id}/lineage"
+    return f"/card/{record_id}"
+
+
+@app.get("/qr/{record_id}.png")
+def qr_code(record_id: str):
+    """QR code image for a record, used by the graph panel, the cards and for labels."""
+    record_type = detect_record_type(record_id)
+    if not record_type:
+        return Response(status_code=404)
+    return Response(content=make_qr_png(BASE_URL + card_path(record_id, record_type)), media_type="image/png")
+
+
 @app.get("/card/{record_id}", response_class=HTMLResponse)
 def view_card(request: Request, record_id: str):
     record_type = detect_record_type(record_id)
     if not record_type:
         return HTMLResponse("Unrecognised ID format.", status_code=404)
 
-    # Generate the QR code for THIS card's own URL
-    card_url = f"{BASE_URL}/card/{record_id}"
-    qr_img = qrcode.make(card_url)
-    buf = io.BytesIO()
-    qr_img.save(buf, format="PNG")
-    qr_base64 = base64.b64encode(buf.getvalue()).decode()
+    # QR code: cells open their lineage & passport page, other records this card
+    qr_base64 = base64.b64encode(make_qr_png(BASE_URL + card_path(record_id, record_type))).decode()
 
     conn = get_connection()
     cur = conn.cursor()
-
-    record = None
-    chain = []
-
-    if record_type == "material":
-        cur.execute(
-            "SELECT chemistry, supplier, date_received, quantity_kg, location, availability, notes "
-            "FROM tbl_materials WHERE material_id = %s", (record_id,)
-        )
-        row = cur.fetchone()
-        if row:
-            columns = ["Chemistry", "Supplier", "Date Received", "Quantity (kg)", "Location", "Availability", "Notes"]
-            record = dict(zip(columns, row))
-            cur.execute("SELECT coating_id FROM tbl_coating WHERE material_id = %s", (record_id,))
-            chain += [f"Coating: {r[0]}" for r in cur.fetchall()]
-
-    elif record_type == "coating":
-        cur.execute(
-            "SELECT material_id, project, coating_date, made_by, coat_weight_gsm, porosity, notes "
-            "FROM tbl_coating WHERE coating_id = %s", (record_id,)
-        )
-        row = cur.fetchone()
-        if row:
-            columns = ["Material ID", "Project", "Coating Date", "Made By", "GSM", "Porosity", "Notes"]
-            record = dict(zip(columns, row))
-            cur.execute("SELECT slp_id FROM tbl_slp WHERE coating_id = %s", (record_id,))
-            chain += [f"SLP: {r[0]}" for r in cur.fetchall()]
-            cur.execute("SELECT coincell_id FROM tbl_coincell WHERE coating_id = %s", (record_id,))
-            chain += [f"CoinCell: {r[0]}" for r in cur.fetchall()]
-            cur.execute("SELECT mlp_id FROM tbl_mlp WHERE cat_coating_id = %s OR an_coating_id = %s", (record_id, record_id))
-            chain += [f"MLP: {r[0]}" for r in cur.fetchall()]
-
-    elif record_type == "slp":
-        cur.execute(
-            "SELECT coating_id, project, date_made, made_by, electrolyte, formation_capacity, np_ratio, notes "
-            "FROM tbl_slp WHERE slp_id = %s", (record_id,)
-        )
-        row = cur.fetchone()
-        if row:
-            columns = ["Coating ID", "Project", "Date Made", "Made By", "Electrolyte", "Formation Capacity", "N/P Ratio", "Notes"]
-            record = dict(zip(columns, row))
-            chain.append(f"Coating: {record['Coating ID']}")
-
-    elif record_type == "coincell":
-        cur.execute("SELECT coating_id, project, date_made, made_by, electrolyte, formation_capacity, gsm, notes, cell_type FROM tbl_coincell WHERE coincell_id = %s", (record_id,))
-        row = cur.fetchone()
-        if row:
-            columns = ["Coating ID", "Project", "Date Made", "Made By", "Electrolyte", "Formation Capacity", "GSM", "Notes", "Cell Type"]
-            record = dict(zip(columns, [str(v) if v is not None else "N/A" for v in row]))
-            chain = [f"Coating: {record['Coating ID']}"]
-
-    elif record_type == "mlp":
-        cur.execute(
-            "SELECT cat_coating_id, an_coating_id, project, date_made, cell_capacity, electrolyte, ac_area_ratio "
-            "FROM tbl_mlp WHERE mlp_id = %s", (record_id,)
-        )
-        row = cur.fetchone()
-        if row:
-            columns = ["Cathode Coating", "Anode Coating", "Project", "Date Made", "Cell Capacity", "Electrolyte", "A/C Area Ratio"]
-            record = dict(zip(columns, row))
-            chain.append(f"Cathode: {record['Cathode Coating']}")
-            chain.append(f"Anode: {record['Anode Coating']}")
-
+    record, chain = fetch_card_record(cur, record_type, record_id)
     cur.close()
     conn.close()
 
@@ -1344,6 +1409,8 @@ def view_card(request: Request, record_id: str):
         {"request": request, "record_id": record_id, "record_type": record_type,
          "record": record, "chain": chain, "qr_base64": qr_base64}
     )
+
+
 @app.get("/api/card/{record_id}")
 def card_data(record_id: str):
     record_type = detect_record_type(record_id)
@@ -1352,62 +1419,187 @@ def card_data(record_id: str):
 
     conn = get_connection()
     cur = conn.cursor()
-    record = None
-    chain = []
-
-    if record_type == "material":
-        cur.execute("SELECT chemistry, supplier, date_received, quantity_kg, location, availability, notes FROM tbl_materials WHERE material_id = %s", (record_id,))
-        row = cur.fetchone()
-        if row:
-            columns = ["Chemistry", "Supplier", "Date Received", "Quantity (kg)", "Location", "Availability", "Notes"]
-            record = dict(zip(columns, [str(v) if v is not None else "N/A" for v in row]))
-            cur.execute("SELECT coating_id FROM tbl_coating WHERE material_id = %s", (record_id,))
-            chain = [f"Coating: {r[0]}" for r in cur.fetchall()]
-
-    elif record_type == "coating":
-        cur.execute("SELECT material_id, project, coating_date, made_by, coat_weight_gsm, porosity, notes FROM tbl_coating WHERE coating_id = %s", (record_id,))
-        row = cur.fetchone()
-        if row:
-            columns = ["Material ID", "Project", "Coating Date", "Made By", "GSM", "Porosity", "Notes"]
-            record = dict(zip(columns, [str(v) if v is not None else "N/A" for v in row]))
-            cur.execute("SELECT slp_id FROM tbl_slp WHERE coating_id = %s", (record_id,))
-            chain += [f"SLP: {r[0]}" for r in cur.fetchall()]
-            cur.execute("SELECT coincell_id FROM tbl_coincell WHERE coating_id = %s", (record_id,))
-            chain += [f"CoinCell: {r[0]}" for r in cur.fetchall()]
-            cur.execute("SELECT mlp_id FROM tbl_mlp WHERE cat_coating_id = %s OR an_coating_id = %s", (record_id, record_id))
-            chain += [f"MLP: {r[0]}" for r in cur.fetchall()]
-
-    elif record_type == "slp":
-        cur.execute("SELECT coating_id, project, date_made, made_by, electrolyte, formation_capacity, np_ratio, notes FROM tbl_slp WHERE slp_id = %s", (record_id,))
-        row = cur.fetchone()
-        if row:
-            columns = ["Coating ID", "Project", "Date Made", "Made By", "Electrolyte", "Formation Capacity", "N/P Ratio", "Notes"]
-            record = dict(zip(columns, [str(v) if v is not None else "N/A" for v in row]))
-            chain = [f"Coating: {record['Coating ID']}"]
-
-    elif record_type == "coincell":
-        cur.execute("SELECT coating_id, project, date_made, made_by, electrolyte, formation_capacity, gsm, notes, cell_type FROM tbl_coincell WHERE coincell_id = %s", (record_id,))
-        row = cur.fetchone()
-        if row:
-            columns = ["Coating ID", "Project", "Date Made", "Made By", "Electrolyte", "Formation Capacity", "GSM", "Notes", "Cell Type"]
-            record = dict(zip(columns, [str(v) if v is not None else "N/A" for v in row]))
-            chain = [f"Coating: {record['Coating ID']}"]
-
-    elif record_type == "mlp":
-        cur.execute("SELECT cat_coating_id, an_coating_id, project, date_made, cell_capacity, electrolyte, ac_area_ratio FROM tbl_mlp WHERE mlp_id = %s", (record_id,))
-        row = cur.fetchone()
-        if row:
-            columns = ["Cathode Coating", "Anode Coating", "Project", "Date Made", "Cell Capacity", "Electrolyte", "A/C Area Ratio"]
-            record = dict(zip(columns, [str(v) if v is not None else "N/A" for v in row]))
-            chain = [f"Cathode: {record['Cathode Coating']}", f"Anode: {record['Anode Coating']}"]
-
+    record, chain = fetch_card_record(cur, record_type, record_id)
+    panel = None
+    if record and record_type in CELL_TYPES:
+        panel = {
+            "fields": panel_fields(cur, record_type, record),
+            # Filled in once process-step data exists (see lineage card plan)
+            "kg_co2e": None,
+            "cost_gbp": None,
+            "qr_url": f"/qr/{record_id}.png",
+            "card_url": f"/card/{record_id}",
+            "lineage_url": f"/card/{record_id}/lineage",
+        }
     cur.close()
     conn.close()
 
     if not record:
         return JSONResponse({"error": "Record not found"}, status_code=404)
 
-    return JSONResponse({"record_id": record_id, "record_type": record_type, "record": record, "chain": chain})
+    record = {k: (str(v) if v is not None else "N/A") for k, v in record.items()}
+    return JSONResponse({"record_id": record_id, "record_type": record_type,
+                         "record": record, "chain": chain, "panel": panel})
+
+
+# --- Lineage & passport page ------------------------------------------------
+# Sustainability numbers are not recorded yet, so they stay None (shown as "—")
+# until process-step data is added to the database.
+EMPTY_PROCESS_METRICS = {"kg_co2e": None, "energy_kwh": None, "cost_gbp": None, "data_quality": None}
+
+
+def to_jsonable(value):
+    """Make dates and Decimals from Postgres safe for JSON."""
+    if isinstance(value, dict):
+        return {k: to_jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [to_jsonable(v) for v in value]
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if value is not None and type(value).__name__ == "Decimal":
+        return float(value)
+    return value
+
+
+def electrode_role(material_id: str) -> str:
+    rid = (material_id or "").upper()
+    if rid.startswith("CAT"):
+        return "Cathode"
+    if rid.startswith("AN"):
+        return "Anode"
+    return "Electrode"
+
+
+def coating_with_material(cur, coating_id: str):
+    """One branch of the lineage: the coating and the material it was made from."""
+    cur.execute(
+        "SELECT material_id, project, coating_date, made_by, coat_weight_gsm, porosity, notes "
+        "FROM tbl_coating WHERE coating_id = %s", (coating_id,)
+    )
+    row = cur.fetchone()
+    keys = ["material_id", "project", "coating_date", "made_by", "coat_weight_gsm", "porosity", "notes"]
+    coating = {"id": coating_id, **(dict(zip(keys, row)) if row else {k: None for k in keys})}
+
+    material = None
+    if coating["material_id"]:
+        cur.execute(
+            "SELECT chemistry, supplier, date_received, quantity_kg, location, availability "
+            "FROM tbl_materials WHERE material_id = %s", (coating["material_id"],)
+        )
+        row = cur.fetchone()
+        keys = ["chemistry", "supplier", "date_received", "quantity_kg", "location", "availability"]
+        material = {"id": coating["material_id"], **(dict(zip(keys, row)) if row else {k: None for k in keys}),
+                    "embodied_kg_co2e": None, "recycled_content": None}
+
+    return {
+        "role": electrode_role(coating["material_id"] or coating_id),
+        "material": material,
+        "process": {"name": "Electrode manufacture", "steps": "Mix → Coat → Dry → Calender",
+                    "date": coating["coating_date"], "operator": coating["made_by"], "location": None,
+                    **EMPTY_PROCESS_METRICS},
+        "coating": coating,
+    }
+
+
+def build_lineage(cur, record_type: str, record_id: str):
+    """Everything the lineage & passport page shows for one cell (None if not found)."""
+    record, chain = fetch_card_record(cur, record_type, record_id)
+    if not record:
+        return None
+
+    if record_type == "mlp":
+        coating_ids = [record["Cathode Coating"], record["Anode Coating"]]
+    else:
+        coating_ids = [record["Coating ID"]]
+    branches = [coating_with_material(cur, cid) for cid in coating_ids]
+
+    cur.execute(
+        "SELECT filename, num_cycles, uploaded_at FROM tbl_cycling_data "
+        "WHERE record_id = %s ORDER BY uploaded_at DESC LIMIT 1", (record_id,)
+    )
+    row = cur.fetchone()
+    cycling = {"filename": row[0], "half_cycles": row[1], "uploaded_at": row[2]} if row else None
+
+    chemistry = " ‖ ".join((b["material"] or {}).get("chemistry") or "?" for b in branches)
+    suppliers = [(b["material"] or {}).get("supplier") for b in branches]
+    capacity = record.get("Cell Capacity") or record.get("Formation Capacity")
+
+    lineage = {
+        "record_id": record_id,
+        "record_type": record_type,
+        "chemistry": chemistry,
+        "record": record,
+        "chain": chain,
+        "branches": branches,
+        "assembly": {"name": "Cell assembly", "date": record.get("Date Made"), "operator": record.get("Made By"),
+                     "location": None, "inputs": {"electrolyte": record.get("Electrolyte")}, **EMPTY_PROCESS_METRICS},
+        "formation": {"name": "Formation", "formation_capacity": record.get("Formation Capacity"),
+                      **EMPTY_PROCESS_METRICS},
+        "usage": {"type": "Testing" if cycling else None, "cycling": cycling},
+        "end_of_life": {"route": None, "recycler": None, "second_life_eligible": None},
+        "totals": {"kg_co2e": None, "kg_co2e_per_kwh": None, "energy_kwh": None,
+                   "cost_gbp": None, "cost_per_kwh": None},
+        "qr_url": f"/qr/{record_id}.png",
+    }
+
+    # How much of the passport is filled in (a rough guide, not a compliance check)
+    checks = {
+        "Chemistry": "?" not in chemistry,
+        "Supplier": all(suppliers),
+        "Electrolyte": record.get("Electrolyte") is not None,
+        "Capacity": capacity is not None,
+        "Date made": record.get("Date Made") is not None,
+        "Project": record.get("Project") is not None,
+        "Cycling data": cycling is not None,
+        "Carbon footprint": False,
+        "Cost": False,
+        "Process energy": False,
+        "Recycled content": False,
+        "End-of-life route": False,
+    }
+    lineage["completeness"] = {
+        "filled": sum(checks.values()),
+        "total": len(checks),
+        "missing": [name for name, ok in checks.items() if not ok],
+    }
+    return lineage
+
+
+@app.get("/card/{record_id}/lineage", response_class=HTMLResponse)
+def lineage_page(request: Request, record_id: str):
+    record_type = detect_record_type(record_id)
+    if not record_type:
+        return HTMLResponse("Unrecognised ID format.", status_code=404)
+    if record_type not in CELL_TYPES:
+        return RedirectResponse(url=f"/card/{record_id}", status_code=303)
+
+    conn = get_connection()
+    cur = conn.cursor()
+    lineage = build_lineage(cur, record_type, record_id)
+    cur.close()
+    conn.close()
+
+    if not lineage:
+        return HTMLResponse("Record not found.", status_code=404)
+    return templates.TemplateResponse("lineage.html", {"request": request, "l": lineage})
+
+
+@app.get("/api/lineage/{record_id}")
+def lineage_data(record_id: str):
+    """Lineage & passport data for one cell as JSON (also the "Export JSON" button)."""
+    record_type = detect_record_type(record_id)
+    if record_type not in CELL_TYPES:
+        return JSONResponse({"error": "Lineage is only available for cells (SLP, coin cell, MLP)"}, status_code=404)
+
+    conn = get_connection()
+    cur = conn.cursor()
+    lineage = build_lineage(cur, record_type, record_id)
+    cur.close()
+    conn.close()
+
+    if not lineage:
+        return JSONResponse({"error": "Record not found"}, status_code=404)
+    return JSONResponse(to_jsonable(lineage))
 
 
 @app.get("/api/chart/gsm-by-coating")

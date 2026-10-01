@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+{% block title %}{{ l.record_id }} — Lineage & passport{% endblock %}
+{% block content %}
+{% set type_labels = {"slp": "SLP", "coincell": "Coin cell", "mlp": "MLP"} %}
+{% set r = l.record %}
+
+{# One process box between two stages of the lineage #}
+{% macro process_box(p, steps=None, extra=None, wide=False) %}
+<div class="lin-proc{% if wide %} wide{% endif %}">
+    <div class="lin-proc-head">
+        <span class="lin-proc-name">{{ p.name }}</span>
+        <span class="dq" title="Data quality: M measured, E estimated, S supplier-declared">{{ p.data_quality | dash }}</span>
+    </div>
+    {% if steps %}<div class="lin-proc-steps">{{ steps }}</div>{% endif %}
+    {% if extra %}<div class="lin-proc-extra">{{ extra }}</div>{% endif %}
+    <div class="chips">
+        <span class="chip co2">{{ p.kg_co2e | dash }} kg CO₂e</span>
+        <span class="chip energy">{{ p.energy_kwh | dash }} kWh</span>
+        <span class="chip cost">£{{ p.cost_gbp | dash }}</span>
+        <span class="chip where">{{ p.location | dash }} · {{ p.date | dash }}{% if p.operator %} · {{ p.operator }}{% endif %}</span>
+    </div>
+</div>
+{% endmacro %}
+
+{% macro arrow(planned=False) %}
+<div class="lin-line{% if planned %} planned{% endif %}"></div>
+<svg class="lin-arrow" width="12" height="8" viewBox="0 0 12 8" aria-hidden="true"><path d="M0 0 L6 8 L12 0 Z" fill="{{ '#a8b0c4' if planned else '#1b3a6b' }}"></path></svg>
+{% endmacro %}
+
+<div class="lin-page">
+    <div class="lin-crumbs">
+        <a href="/graph">← Back to graph</a> · <a href="/card/{{ l.record_id }}">Basic card</a>
+    </div>
+
+    <!-- Header -->
+    <div class="lin-header">
+        <div class="lin-header-top">
+            <div>
+                <div class="lin-title-row">
+                    <h1>{{ l.record_id }}</h1>
+                    <span class="status-chip">{{ "In test" if l.usage.type == "Testing" else "No test data yet" }}</span>
+                </div>
+                <div class="lin-subtitle">{{ type_labels[l.record_type] }} · {{ l.chemistry }}{% if r.get("Project") %} · Project: {{ r.get("Project") }}{% endif %}</div>
+            </div>
+            <div class="lin-passport-id" title="Proposed passport ID format">Passport ID <span>BMAC-DPP-{{ l.record_id }}</span></div>
+        </div>
+        <div class="lin-actions">
+            <span class="usage-label">USAGE</span>
+            <span class="usage-value">{{ l.usage.type | dash }}</span>
+            <span style="margin-left: auto;"></span>
+            <a class="btn-outline" href="{{ l.qr_url }}" download="{{ l.record_id }}-qr.png">Print label</a>
+            <a class="btn-outline" href="/api/lineage/{{ l.record_id }}" download="{{ l.record_id }}-passport.json">Export JSON</a>
+            {% if l.record_type == "slp" %}<a class="btn-solid" href="/slp/{{ l.record_id }}/edit">Edit</a>{% endif %}
+        </div>
+    </div>
+
+    <!-- Summary row -->
+    <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">COST</div><div class="kpi-value cost">{{ l.totals.cost_per_kwh | dash }}<small> £/kWh</small></div><div class="kpi-note">£{{ l.totals.cost_gbp | dash }} per cell</div></div>
+        <div class="kpi"><div class="kpi-label">CARBON</div><div class="kpi-value co2">{{ l.totals.kg_co2e_per_kwh | dash }}<small> kg CO₂e/kWh</small></div><div class="kpi-note">{{ l.totals.kg_co2e | dash }} kg per cell</div></div>
+        <div class="kpi"><div class="kpi-label">PROCESS ENERGY</div><div class="kpi-value energy">{{ l.totals.energy_kwh | dash }}<small> kWh</small></div><div class="kpi-note">per cell</div></div>
+        <div class="kpi"><div class="kpi-label">STATE OF HEALTH</div><div class="kpi-value"><span id="sohValue">—</span><small> %</small></div><div class="kpi-note" id="sohNote">{{ "loading cycling data…" if l.usage.cycling else "no cycling data" }}</div></div>
+        <div class="kpi" title="Missing: {{ l.completeness.missing | join(', ') }}">
+            <div class="kpi-label">PASSPORT DATA</div>
+            <div class="kpi-value">{{ (100 * l.completeness.filled / l.completeness.total) | round | int }}<small> % complete</small></div>
+            <div class="meter"><div style="width: {{ 100 * l.completeness.filled / l.completeness.total }}%"></div></div>
+        </div>
+    </div>
+
+    <div class="lin-cols">
+        <!-- LEFT -->
+        <div class="lin-col">
+            <section class="result lin-box">
+                <div class="lin-box-head">
+                    <div>
+                        <h2>Lineage</h2>
+                        <div class="muted">This cell's segment of the traceability graph</div>
+                    </div>
+                    <a href="/graph" class="link-strong">Show in graph →</a>
+                </div>
+                <div class="lin-legend">
+                    <span><i class="dot material"></i>Material</span>
+                    <span><i class="dot coating"></i>Coating</span>
+                    <span><i class="dot {{ l.record_type }}"></i>{{ type_labels[l.record_type] }}</span>
+                    <span class="co2-text">CO₂e</span><span class="energy-text">kWh</span><span class="cost-text">£</span>
+                    <span><b>M</b> measured · <b>E</b> estimated · <b>S</b> supplier</span>
+                </div>
+
+                <div class="branch-grid {{ 'two' if l.branches | length > 1 else 'one' }}">
+                    {% for b in l.branches %}
+                    <div class="branch">
+                        <div class="lin-node material">
+                            <i class="dot material"></i>
+                            <div>
+                                <div class="node-kind">MATERIAL · {{ b.role | upper }}</div>
+                                <div class="node-id"><a href="/card/{{ b.material.id if b.material else '' }}">{{ b.material.id if b.material else "?" }}</a></div>
+                                <div class="node-info">{{ (b.material.chemistry if b.material else None) | dash }} · {{ (b.material.supplier if b.material else None) | dash }}</div>
+                                <div class="node-co2">{{ (b.material.embodied_kg_co2e if b.material else None) | dash }} kg CO₂e embodied</div>
+                            </div>
+                        </div>
+                        <div class="lin-line short"></div>
+                        {{ process_box(b.process, steps=b.process.steps) }}
+                        {{ arrow() }}
+                        <div class="lin-node coating">
+                            <i class="dot coating"></i>
+                            <div>
+                                <div class="node-kind">COATING · {{ b.role | upper }}</div>
+                                <div class="node-id"><a href="/card/{{ b.coating.id }}">{{ b.coating.id }}</a></div>
+                                <div class="node-info">{{ b.coating.coat_weight_gsm | dash }} g/m² · {{ b.coating.porosity | dash }} porosity</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="lin-trunk">
+                    {% if l.branches | length > 1 %}<div class="merge-bracket"></div>{% endif %}
+                    <div class="lin-line short"></div>
+                    {{ process_box(l.assembly, steps="Cut / stack → Tab weld → Electrolyte fill → Seal",
+                                   extra="Electrolyte: " ~ (l.assembly.inputs.electrolyte | dash), wide=True) }}
+                    {{ arrow() }}
+                    <div class="lin-node this-cell">
+                        <i class="dot {{ l.record_type }}"></i>
+                        <div>
+                            <div class="node-kind">THIS CELL · {{ type_labels[l.record_type] | upper }}</div>
+                            <div class="node-id">{{ l.record_id }}</div>
+                            <div class="node-info">
+                                {% if r.get("Cell Capacity") is not none %}Capacity {{ r["Cell Capacity"] }}{% elif r.get("Formation Capacity") is not none %}Formation capacity {{ r["Formation Capacity"] }}{% else %}Capacity —{% endif %}
+                                {% if r.get("N/P Ratio") is not none %} · N/P {{ r["N/P Ratio"] }}{% endif %}
+                                {% if r.get("A/C Area Ratio") is not none %} · A/C {{ r["A/C Area Ratio"] }}{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lin-line short"></div>
+                    {{ process_box(l.formation, extra="Formation capacity: " ~ (l.formation.formation_capacity | dash), wide=True) }}
+                    {{ arrow() }}
+                    <div class="lin-node usage">
+                        <div>
+                            <div class="node-kind">USAGE · {{ (l.usage.type or "not set") | upper }}</div>
+                            {% if l.usage.cycling %}
+                            <div class="node-info">{{ l.usage.cycling.half_cycles | dash }} half-cycles in {{ l.usage.cycling.filename }}</div>
+                            {% else %}
+                            <div class="node-info">No cycling data · <a href="/cycling/upload">Upload cycling data</a></div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="lin-line short planned"></div>
+                    <div class="lin-proc wide planned">
+                        <div class="lin-proc-head"><span class="lin-proc-name">End-of-life route (planned)</span><span class="muted">not started</span></div>
+                        <div class="lin-proc-steps">Route: {{ l.end_of_life.route | dash }} · Recycler: {{ l.end_of_life.recycler | dash }}</div>
+                        <div class="lin-proc-extra">EU recovery targets from 2031: Li 80% · Co, Ni, Cu 95%</div>
+                    </div>
+                    {{ arrow(planned=True) }}
+                    <div class="lin-node planned"><div><div class="node-kind">END OF LIFE</div><div class="node-info">Recovered materials → new CAT-/AN- lots</div></div></div>
+                </div>
+
+                <div class="lin-totals">
+                    <div><div class="muted">Total along lineage</div><div class="co2-text big">{{ l.totals.kg_co2e | dash }} kg CO₂e</div></div>
+                    <div><div class="muted">Process energy</div><div class="energy-text big">{{ l.totals.energy_kwh | dash }} kWh</div></div>
+                    <div><div class="muted">Cost incl. materials</div><div class="cost-text big">£{{ l.totals.cost_gbp | dash }}</div></div>
+                </div>
+            </section>
+
+            <section class="result lin-box">
+                <div class="section-title">PERFORMANCE &amp; DURABILITY</div>
+                {% if l.usage.cycling %}
+                <div class="perf">
+                    <div class="perf-chart"><canvas id="capacityChart" height="170"></canvas></div>
+                    <div class="perf-table">
+                        <div class="row"><span class="label">Rated capacity</span><span class="value">{{ r.get("Cell Capacity") | dash }}</span></div>
+                        <div class="row"><span class="label">Formation cap.</span><span class="value">{{ r.get("Formation Capacity") | dash }}</span></div>
+                        <div class="row"><span class="label">First discharge</span><span class="value" id="perfFirst">—</span></div>
+                        <div class="row"><span class="label">Latest discharge</span><span class="value" id="perfLatest">—</span></div>
+                        <div class="row"><span class="label">Avg. CE</span><span class="value" id="perfCe">—</span></div>
+                    </div>
+                </div>
+                {% else %}
+                <p class="muted">No cycling data for this cell yet. <a href="/cycling/upload">Upload a BioLogic .mpr file</a> to see capacity, coulombic efficiency and state of health here.</p>
+                {% endif %}
+            </section>
+
+            <section class="result lin-box">
+                <div class="section-title">CIRCULARITY &amp; END OF LIFE</div>
+                <div class="row"><span class="label">Planned route</span><span class="value">{{ l.end_of_life.route | dash }}</span></div>
+                <div class="row"><span class="label">Second-life eligible</span><span class="value">{{ l.end_of_life.second_life_eligible | dash }}</span></div>
+                <div class="row"><span class="label">Hazardous substances</span><span class="value">—</span></div>
+                <div class="row"><span class="label">Recycler</span><span class="value">{{ l.end_of_life.recycler | dash }}</span></div>
+            </section>
+
+            <section class="result lin-box">
+                <div class="section-title">SUPPLY CHAIN DUE DILIGENCE</div>
+                {% for b in l.branches if b.material %}
+                <div class="row"><span class="label">{{ b.role }} supplier</span><span class="value">{{ b.material.supplier | dash }}</span></div>
+                {% endfor %}
+                <div class="row"><span class="label">Due-diligence status (OECD)</span><span class="value">—</span></div>
+                <div class="row"><span class="label">Mine origin (Co / Ni / Li)</span><span class="value">—</span></div>
+                <div class="row"><span class="label">Certificates / CoA</span><span class="value">—</span></div>
+            </section>
+        </div>
+
+        <!-- RIGHT -->
+        <div class="lin-col">
+            <section class="result lin-box">
+                <div class="section-title">KEY PARAMETERS</div>
+                <div class="row"><span class="label">Chemistry</span><span class="value">{{ l.chemistry }}</span></div>
+                {% for label, value in r.items() %}
+                <div class="row"><span class="label">{{ label }}</span><span class="value">
+                    {% if label in ("Coating ID", "Cathode Coating", "Anode Coating") and value %}<a class="mono" href="/card/{{ value }}">{{ value }}</a>{% else %}{{ value | dash }}{% endif %}
+                </span></div>
+                {% endfor %}
+                <div class="panel-qr qr-row">
+                    <img src="{{ l.qr_url }}" alt="QR code for {{ l.record_id }}">
+                    <div>
+                        <div class="qr-title">Scan to open this card</div>
+                        <div class="muted mono small">/card/{{ l.record_id }}/lineage</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="result lin-box">
+                <div class="section-head"><span class="section-title">COST</span><span class="cost-text">£{{ l.totals.cost_gbp | dash }} · {{ l.totals.cost_per_kwh | dash }} £/kWh</span></div>
+                <div class="row"><span class="label">Materials (bill of materials)</span><span class="value">—</span></div>
+                <div class="row"><span class="label">Electrodes</span><span class="value">—</span></div>
+                <div class="row"><span class="label">Assembly</span><span class="value">—</span></div>
+                <div class="row"><span class="label">Formation</span><span class="value">—</span></div>
+                <div class="muted small">Reference: pack ≈ $156/kWh (World Bank, 2020 data).</div>
+            </section>
+
+            <section class="result lin-box">
+                <div class="section-head"><span class="section-title">CARBON FOOTPRINT</span><span class="tag-warn">Not verified</span></div>
+                <div class="muted small">By EU life-cycle stage (kg CO₂e per cell)</div>
+                <div class="bar-row"><span>Raw materials</span><div class="bar"></div><b>—</b></div>
+                <div class="bar-row"><span>Main production</span><div class="bar"></div><b>—</b></div>
+                <div class="bar-row"><span>Distribution</span><div class="bar"></div><b>—</b></div>
+                <div class="bar-row"><span>End of life</span><div class="bar"></div><b>—</b></div>
+                <div class="muted small divider">Per kWh vs benchmarks (kg CO₂e/kWh)</div>
+                <div class="bar-row"><span><b>This cell</b></span><div class="bar"></div><b>—</b></div>
+                <div class="bar-row"><span>Industry 2018 (WEF)</span><div class="bar"><div class="fill grey" style="width: 100%"></div></div><b>138</b></div>
+                <div class="bar-row"><span>EU 2030 (WEF)</span><div class="bar"><div class="fill co2" style="width: 49%"></div></div><b>67</b></div>
+            </section>
+
+            <section class="result lin-box">
+                <div class="section-title">ENERGY &amp; UTILITIES</div>
+                <div class="row"><span class="label">Electricity, all processes</span><span class="value">{{ l.totals.energy_kwh | dash }}</span></div>
+                <div class="row"><span class="label">Dry room · drying</span><span class="value">—</span></div>
+                <div class="row"><span class="label">Grid carbon intensity</span><span class="value">—</span></div>
+                <div class="row"><span class="label">Solvent used · recovered</span><span class="value">—</span></div>
+                <div class="row"><span class="label">Process water</span><span class="value">—</span></div>
+            </section>
+
+            <section class="result lin-box">
+                <div class="section-title">MATERIAL INPUTS</div>
+                <div class="mat-table">
+                    <div class="mat-head"><span>Material</span><span>Chemistry</span><span>Supplier</span><span>g</span></div>
+                    {% for b in l.branches if b.material %}
+                    <div><a class="mono" href="/card/{{ b.material.id }}">{{ b.material.id }}</a><span>{{ b.material.chemistry | dash }}</span><span>{{ b.material.supplier | dash }}</span><span>—</span></div>
+                    {% endfor %}
+                    <div><span>Electrolyte</span><span>{{ r.get("Electrolyte") | dash }}</span><span>—</span><span>—</span></div>
+                    <div><span>Foils, separator, casing</span><span>—</span><span>—</span><span>—</span></div>
+                </div>
+                <div class="muted small divider">Recycled content vs EU minimums · dark mark 2031, light mark 2036</div>
+                <div class="rc-row"><span>Cobalt</span><div class="bar"><i class="m31" style="left: 53%"></i><i class="m36" style="left: 87%"></i></div><b>— / 16 / 26%</b></div>
+                <div class="rc-row"><span>Lithium</span><div class="bar"><i class="m31" style="left: 20%"></i><i class="m36" style="left: 40%"></i></div><b>— / 6 / 12%</b></div>
+                <div class="rc-row"><span>Nickel</span><div class="bar"><i class="m31" style="left: 20%"></i><i class="m36" style="left: 50%"></i></div><b>— / 6 / 15%</b></div>
+            </section>
+        </div>
+    </div>
+</div>
+
+{% if l.usage.cycling %}
+<script>
+    // State of health and capacity chart from the latest uploaded cycling file
+    fetch(`/api/cycling/${encodeURIComponent({{ l.record_id | tojson }})}/summary`)
+        .then(res => { if (!res.ok) throw new Error('no data'); return res.json(); })
+        .then(s => {
+            const d = s.discharge_capacity_mah || [];
+            document.getElementById('sohValue').textContent = s.soh_pct != null ? s.soh_pct : '—';
+            document.getElementById('sohNote').textContent = d.length ? `after ${d.length} discharges` : 'no discharge data';
+            if (d.length) {
+                document.getElementById('perfFirst').textContent = d[0].toFixed(2) + ' mAh';
+                document.getElementById('perfLatest').textContent = d[d.length - 1].toFixed(2) + ' mAh';
+            }
+            const ce = s.efficiency || [];
+            if (ce.length) document.getElementById('perfCe').textContent = (ce.reduce((a, b) => a + b, 0) / ce.length).toFixed(2) + '%';
+            if (window.Chart && d.length) {
+                new Chart(document.getElementById('capacityChart'), {
+                    type: 'line',
+                    data: { labels: d.map((_, i) => i + 1),
+                            datasets: [{ label: 'Discharge capacity (mAh)', data: d, borderColor: '#2e5fa3',
+                                         backgroundColor: 'rgba(46,95,163,0.08)', fill: true, tension: 0.1, pointRadius: 2 }] },
+                    options: { plugins: { legend: { display: false } },
+                               scales: { x: { title: { display: true, text: 'Discharge #' } },
+                                         y: { title: { display: true, text: 'mAh' } } } }
+                });
+            }
+        })
+        .catch(() => { document.getElementById('sohNote').textContent = 'cycling file could not be read'; });
+</script>
+{% endif %}
+{% endblock %}
