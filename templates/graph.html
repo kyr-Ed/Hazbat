@@ -19,6 +19,15 @@
                 Clear all
             </span>
         </div> 
+
+        <!-- NODE TYPE  -->
+        <div class="fs-wrap">
+            <div class="fs-head" onclick="toggleSection('nodeType')">
+                NODE TYPE <span id="chev-nodeType" class="chev">▾</span>
+            </div>
+            <div id="sec-nodeType"></div>
+        </div>
+        <hr class="fs-sep">
         
         <!-- PROJECT -->
         <div class="fs-wrap">
@@ -136,25 +145,17 @@
     border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.25);
 }
 </style>
-    <!-- Quick-view panel for cells: filled in by static/js/node_panel.js -->
-    <aside id="nodePanel" class="result node-panel" hidden aria-live="polite"></aside>
-</div>
-
-<script src="/static/js/node_panel.js"></script>
+ 
 <script>
-    function shortLabel(id, group) {
-        if (group === 'project') return id.replace('PROJECT-', '');
-        if (group === 'material') return id;
-        if (group === 'coating') return id.split('-').slice(-1)[0].replace('C', 'Coat ');
-        if (group === 'slp') return 'SLP-' + id.split('-SLP-')[1];
-        if (group === 'coincell') return 'CC-' + id.split('-CC-')[1];
-        return id;
-    }
 
 
+// Coalesces rapid calls (e.g. slider drag) into one execution after `ms` milliseconds.
+function debounce(fn, ms) {
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+const applyVisibilityDebounced = debounce(applyVisibility, 60);
 
-
-<script>
 
 // --- Label ---
 function shortLabel(id, group) {
@@ -269,37 +270,29 @@ function esc(str) {
     }
     
 // --- Path finding ---
-    function findPathToRoot(targetId, edges) {
-        // Walk backwards through edges (child -> parent) until no parent found.
-        // Excludes dashed project-reference edges — only follows real traceability links.
-        const path = [targetId];
-        let current = targetId;
-        for (let guard = 0; guard < 20; guard++) {
-            const parent = edges.find(e => e.to === current && !e.dashes);
-            if (!parent) break;
-            path.unshift(parent.from);
-            current = parent.from;
     function findAncestors(targetId, edges) {
         // Walk backwards (child -> parent) through EVERY parent, not just the first.
         // An MLP has two parents (cathode and anode coating), so both branches
         // back to their materials are included.
         // Excludes dashed project-reference edges — only follows real traceability links.
+        const revAdj = new Map();
+        edges.forEach(e => {
+            if (!e.dashes) {
+                if (!revAdj.has(e.to)) revAdj.set(e.to, []);
+                revAdj.get(e.to).push(e.from);
+            }
+        });
         const ancestors = new Set([targetId]);
         const queue = [targetId];
-
         while (queue.length) {
             const current = queue.shift();
-            edges
-                .filter(edge => edge.to === current && !edge.dashes)
-                .forEach(edge => {
-                    if (!ancestors.has(edge.from)) {
-                        ancestors.add(edge.from);
-                        queue.push(edge.from);
-                    }
-                });
+            (revAdj.get(current) || []).forEach(from => {
+            if (!ancestors.has(from)) { ancestors.add(from); queue.push(from); }
+            });
         }
         return ancestors;
     }
+
     function findDescendants(startId, edges) {
         // Follow real traceability links forward, from parent to child.
         const adj = new Map();
@@ -325,68 +318,26 @@ function esc(str) {
     }
 
     //--- Node styling ---
-    function buildNodeStyle(node, isOnPath) {
-        const c = groupColors[node.group];
-        return {
-    function clearSelection() {
-        currentSelectedPath = null;
-        document.dispatchEvent(new CustomEvent('hazbat:clear'));   // closes the side panel
-        if (pulseInterval) clearInterval(pulseInterval);
-        edgesDS.forEach(e => edgesDS.update({ id: e.id, color: { color: 'rgba(120,140,200,0.35)' }, width: 1.5 }));
-        nodesDS.forEach(node => setNodeStyle(node, true));
-    }
-
-    const groupColors = {
-            material: { background: '#00e5ff', border: '#00b8cc' },
-            coating:  { background: '#7c4dff', border: '#5c35cc' },
-            slp:      { background: '#00ff9d', border: '#00cc7d' },
-            coincell: { background: '#ff6ec7', border: '#cc5599' },
-            mlp:      { background: '#ffb800', border: '#cc9300' },
-            project:  { background: '#ffffff', border: '#888888' }
-            };
-
-    // Assign level to groups for easier understanding
-    const groupLevels = {
-            material: 0,
-            coating: 1,
-            slp: 2,
-            coincell: 2,
-            mlp: 2,
-            project: 3
+function buildNodeStyle(node, isOnPath) {
+    const c = groupColors[node.group];
+    return {
+        id:          node.id,
+        borderWidth: (isOnPath ? BASE_BORDER.selected : BASE_BORDER.dimmed) * currentScale,
+        color: isOnPath
+            ? { background: c.background, border: c.border }
+            : { background: rgba(c.background, 0.12), border: rgba(c.border, 0.18) },
+        font: {
+            color: isOnPath ? '#e8e8f0' : 'rgba(232,232,240,0.22)',
+            size:  node.group === 'project' ? 14 : 12,
+            bold:  node.group === 'project'
+        },
+        shadow: isOnPath
+            ? { enabled: true, color: c.background, size: 10, x: 0, y: 0 }
+            : { enabled: false }
     };
+}
 
-
-    function rgba(hex, opacity) {
-        const value = parseInt(hex.slice(1), 16);
-        return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${opacity})`;
-    }
-
-    // isOnPath = true  → node is highlighted (or no selection is active, i.e. normal state)
-    // isOnPath = false → node is dimmed because it is off the selected path
-    function setNodeStyle(node, isOnPath) {
-        const colors = groupColors[node.group];
-
-        // Scale the border so it remains proportional to node size at any zoom level.
-        const border = isOnPath
-            ? BASE_BORDER.selected * currentScale
-            : BASE_BORDER.dimmed   * currentScale;
-        
-        nodesDS.update({
-            id: node.id,
-            borderWidth: (isOnPath ? BASE_BORDER.selected : BASE_BORDER.dimmed) * currentScale,
-            color: isOnPath
-                ? { background: c.background, border: c.border }
-                : { background: rgba(c.background, 0.12), border: rgba(c.border, 0.18) },
-            font: {
-                color: isOnPath ? '#e8e8f0' : 'rgba(232,232,240,0.22)',
-                size:  node.group === 'project' ? 14 : 12,
-                bold:  node.group === 'project'
-            },
-            shadow: isOnPath
-                ? { enabled: true, color: c.background, size: 10, x: 0, y: 0 }
-                : { enabled: false }
-        };
-    }
+ 
         // Apply node styles in ONE batched update — one canvas redraw instead of N.
     function applyNodeStyles(selectedPath) {
         nodesDS.update(
@@ -418,7 +369,7 @@ function esc(str) {
     allEdges
         .filter(e => e.dashes && activeProjects.has(e.from))
         .forEach(e => {
-            findPathToRoot(e.to, allEdges).forEach(id => projectVisibleNodes.add(id));
+            findAncestors(e.to, allEdges).forEach(id => projectVisibleNodes.add(id));
             findDescendants(e.to, allEdges).forEach(id => projectVisibleNodes.add(id));
         });
     }
@@ -426,7 +377,7 @@ function esc(str) {
     // --- Node visibility ---    
     function isNodeVisible(node) {
     // 1. Node-type (group) filter
-    // if (!activeGroups.has(node.group)) return false;
+    if (!activeGroups.has(node.group)) return false;
 
     // 2. Project filter (pre-computed inclusion set)
     if (projectVisibleNodes !== null && !projectVisibleNodes.has(node.id)) return false;
@@ -478,12 +429,14 @@ function esc(str) {
     return true;
     }
 
-    function applyVisibility() {
+function applyVisibility() {
     const hiddenNodes = new Set();
+    const allNodes = nodesDS.get();
+    const allEdges = edgesDS.get();
 
     // Batch node visibility update
     nodesDS.update(
-        nodesDS.get().map(node => {
+        allNodes.map(node => {
             const vis = isNodeVisible(node);
             if (!vis) hiddenNodes.add(node.id);
             return { id: node.id, hidden: !vis };
@@ -492,7 +445,7 @@ function esc(str) {
 
     // Batch edge visibility update — hide edges where either endpoint is hidden
     edgesDS.update(
-        edgesDS.get().map(e => ({
+        allEdges.map(e => ({
             id    : e.id,
             hidden: hiddenNodes.has(e.from) || hiddenNodes.has(e.to)
         }))
@@ -504,7 +457,7 @@ function esc(str) {
     }
 
     updateClearButton();
-    }
+}
 
     
 
@@ -589,7 +542,7 @@ function wireSlider(wrap, onRange) {
             lo === parseFloat(minI.min) ? null : lo,
             hi === parseFloat(maxI.max) ? null : hi
         );
-        applyVisibility();
+        applyVisibilityDebounced();
     }));
 }
 
@@ -767,9 +720,7 @@ function buildFilterUI(fd) {
         (lo, hi) => { FS.cell.npMin = lo; FS.cell.npMax = hi; });
 
     // Split cell checkboxes: first N belong to made_by, the rest to electrolyte
-    const cellCbs   = [...cellSec.querySelectorAll('.f-cb input')];
-    const nMadeBy   = fl.made_by?.length ?? 0;
-    cellCbs.forEach((cb, i) =>
+    cellSec.querySelectorAll('.f-cb input').forEach(cb =>
         cb.addEventListener('change', () => {
             const set = i < nMadeBy ? FS.cell.exMadeBy : FS.cell.exElectrolyte;
             cb.checked ? set.delete(cb.dataset.v) : set.add(cb.dataset.v);
@@ -852,7 +803,7 @@ function resetFilters() {
         currentScale = params.scale;
         applyNodeStyles(currentSelectedPath);
     }
-    //--- Selection handling ---
+//--- Selection handling ---
     function clearSelection() {
         currentSelectedPath = null;
         document.getElementById('nodeCard').style.display = 'none';
@@ -908,10 +859,10 @@ function resetFilters() {
             // Build all filter panels
             buildFilterUI(filterData);
             buildProjectFilters(graphData.nodes.filter(n => n.group === 'project'));
+            buildNodeTypeFilter();
 
             // ---Click handler---
-            network.on("click", async function(params) {
-            network.on("click", function(params) {
+            network.on('click', async function(params) {
                 if (pulseInterval) clearInterval(pulseInterval);
 
                 if (params.nodes.length === 0) {
@@ -923,49 +874,19 @@ function resetFilters() {
 
                 // Build the full highlighted set: upstream path + all descendants.
                 const allEdges    = edgesDS.get();
-                const path        = findPathToRoot(nodeId, allEdges);
+                const path        = findAncestors(nodeId, allEdges);
                 const downstream  = findDescendants(nodeId, allEdges);
                 const selectedPath = new Set([...path, ...downstream]);
                 currentSelectedPath = selectedPath;          // expose to onZoom
 
                 // Collect all edges within the selected subgraph
-            const pathEdgeIds = new Set();
-            for (let i = 0; i < path.length - 1; i++) {
-                const e = allEdges.find(e => e.from === path[i] && e.to === path[i + 1]);
-                if (e) pathEdgeIds.add(e.id);
-            }
-            allEdges
-                .filter(e => selectedPath.has(e.from) && selectedPath.has(e.to) && !e.dashes)
-                .forEach(e => pathEdgeIds.add(e.id));
+            const pathEdgeIds = allEdges
+                .filter(e => !e.dashes && selectedPath.has(e.from) && selectedPath.has(e.to))
+                .map(e => e.id);
 
-                // Dim every node not in the set; highlight those that are — ONE redraw.
-                applyNodeStyles(selectedPath);
-                resetEdgeStyles();  // reset all edges to default color/width
-                // Reset all edges/nodes first
-                edgesDS.forEach(e => edgesDS.update({ id: e.id, color: { color: 'rgba(120,140,200,0.35)' }, width: 1.5 }));
-                // nodesDS.forEach(n => nodesDS.update({ id: n.id, borderWidth: 2 }));
-                nodesDS.forEach(node => setNodeStyle(node, true));
-
-                // Trace every manufacturing branch back to its root material(s)
-                const allEdges = edgesDS.get();
-                const upstreamNodes = findAncestors(nodeId, allEdges);
-
-                // Include the upstream branches and every downstream traceability node.
-                const downstreamNodes = findDescendants(nodeId, allEdges);
-                const selectedPath = new Set([...upstreamNodes, ...downstreamNodes]);
-                currentSelectedPath = selectedPath
-                
-                // Highlight all real edges within the selected traceability branch.
-                const pathEdgeIds = allEdges
-                    .filter(edge =>
-                        !edge.dashes &&
-                        selectedPath.has(edge.from) &&
-                        selectedPath.has(edge.to)
-                    )
-                    .map(edge => edge.id);
-
-                // Brighten selected/upstream/downstream nodes and dim all others.
-                nodesDS.forEach(node => setNodeStyle(node, selectedPath.has(node.id)));
+            // Dim unselected nodes, highlight selected — ONE redraw
+            applyNodeStyles(selectedPath);
+            resetEdgeStyles();
 
                 // Pulsing animation along the path edges
                 let bright = false;
@@ -999,7 +920,7 @@ function resetFilters() {
 </script>
 
 
-// ─── Cycling Data Graph ─────────────────────────────────────────────────────
+<!-- ─── Cycling Data Graph ───────────────────────────────────────────────────── -->
 <div style="margin-top: 40px;">
     <div class="result">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
