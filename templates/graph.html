@@ -19,6 +19,15 @@
                 Clear all
             </span>
         </div> 
+
+        <!-- NODE TYPE  -->
+        <div class="fs-wrap">
+            <div class="fs-head" onclick="toggleSection('nodeType')">
+                NODE TYPE <span id="chev-nodeType" class="chev">▾</span>
+            </div>
+            <div id="sec-nodeType"></div>
+        </div>
+        <hr class="fs-sep">
         
         <!-- PROJECT -->
         <div class="fs-wrap">
@@ -140,6 +149,14 @@
 <script>
 
 
+// Coalesces rapid calls (e.g. slider drag) into one execution after `ms` milliseconds.
+function debounce(fn, ms) {
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+const applyVisibilityDebounced = debounce(applyVisibility, 60);
+
+
 // --- Label ---
 function shortLabel(id, group) {
     if (group === 'project')    return id.replace('PROJECT-', '');
@@ -258,19 +275,20 @@ function esc(str) {
         // An MLP has two parents (cathode and anode coating), so both branches
         // back to their materials are included.
         // Excludes dashed project-reference edges — only follows real traceability links.
+        const revAdj = new Map();
+        edges.forEach(e => {
+            if (!e.dashes) {
+                if (!revAdj.has(e.to)) revAdj.set(e.to, []);
+                revAdj.get(e.to).push(e.from);
+            }
+        });
         const ancestors = new Set([targetId]);
         const queue = [targetId];
-
         while (queue.length) {
             const current = queue.shift();
-            edges
-                .filter(edge => edge.to === current && !edge.dashes)
-                .forEach(edge => {
-                    if (!ancestors.has(edge.from)) {
-                        ancestors.add(edge.from);
-                        queue.push(edge.from);
-                    }
-                });
+            (revAdj.get(current) || []).forEach(from => {
+            if (!ancestors.has(from)) { ancestors.add(from); queue.push(from); }
+            });
         }
         return ancestors;
     }
@@ -351,7 +369,7 @@ function buildNodeStyle(node, isOnPath) {
     allEdges
         .filter(e => e.dashes && activeProjects.has(e.from))
         .forEach(e => {
-            findPathToRoot(e.to, allEdges).forEach(id => projectVisibleNodes.add(id));
+            findAncestors(e.to, allEdges).forEach(id => projectVisibleNodes.add(id));
             findDescendants(e.to, allEdges).forEach(id => projectVisibleNodes.add(id));
         });
     }
@@ -413,10 +431,12 @@ function buildNodeStyle(node, isOnPath) {
 
 function applyVisibility() {
     const hiddenNodes = new Set();
+    const allNodes = nodesDS.get();
+    const allEdges = edgesDS.get();
 
     // Batch node visibility update
     nodesDS.update(
-        nodesDS.get().map(node => {
+        allNodes.map(node => {
             const vis = isNodeVisible(node);
             if (!vis) hiddenNodes.add(node.id);
             return { id: node.id, hidden: !vis };
@@ -425,7 +445,7 @@ function applyVisibility() {
 
     // Batch edge visibility update — hide edges where either endpoint is hidden
     edgesDS.update(
-        edgesDS.get().map(e => ({
+        allEdges.map(e => ({
             id    : e.id,
             hidden: hiddenNodes.has(e.from) || hiddenNodes.has(e.to)
         }))
@@ -522,7 +542,7 @@ function wireSlider(wrap, onRange) {
             lo === parseFloat(minI.min) ? null : lo,
             hi === parseFloat(maxI.max) ? null : hi
         );
-        applyVisibility();
+        applyVisibilityDebounced();
     }));
 }
 
@@ -700,9 +720,7 @@ function buildFilterUI(fd) {
         (lo, hi) => { FS.cell.npMin = lo; FS.cell.npMax = hi; });
 
     // Split cell checkboxes: first N belong to made_by, the rest to electrolyte
-    const cellCbs   = [...cellSec.querySelectorAll('.f-cb input')];
-    const nMadeBy   = fl.made_by?.length ?? 0;
-    cellCbs.forEach((cb, i) =>
+    cellSec.querySelectorAll('.f-cb input').forEach(cb =>
         cb.addEventListener('change', () => {
             const set = i < nMadeBy ? FS.cell.exMadeBy : FS.cell.exElectrolyte;
             cb.checked ? set.delete(cb.dataset.v) : set.add(cb.dataset.v);
@@ -841,6 +859,7 @@ function resetFilters() {
             // Build all filter panels
             buildFilterUI(filterData);
             buildProjectFilters(graphData.nodes.filter(n => n.group === 'project'));
+            buildNodeTypeFilter();
 
             // ---Click handler---
             network.on('click', async function(params) {
@@ -855,7 +874,7 @@ function resetFilters() {
 
                 // Build the full highlighted set: upstream path + all descendants.
                 const allEdges    = edgesDS.get();
-                const path        = findPathToRoot(nodeId, allEdges);
+                const path        = findAncestors(nodeId, allEdges);
                 const downstream  = findDescendants(nodeId, allEdges);
                 const selectedPath = new Set([...path, ...downstream]);
                 currentSelectedPath = selectedPath;          // expose to onZoom
