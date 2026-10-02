@@ -377,7 +377,7 @@ function buildNodeStyle(node, isOnPath) {
     // --- Node visibility ---    
     function isNodeVisible(node) {
     // 1. Node-type (group) filter
-    // if (!activeGroups.has(node.group)) return false;
+    if (!activeGroups.has(node.group)) return false;
 
     // 2. Project filter (pre-computed inclusion set)
     if (projectVisibleNodes !== null && !projectVisibleNodes.has(node.id)) return false;
