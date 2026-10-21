@@ -8,3 +8,4 @@ test_mpr.py
 *.session.sql
 local_data.sql
 *.patch
+core/db.py
