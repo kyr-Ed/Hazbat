@@ -12,6 +12,7 @@ import base64
 from core.config import BASE_URL
 from core.db import get_connection
 from core.templates import templates
+from services.coa import latest_coas, public_coa
 from services.cards import card_path, fetch_card_record, make_qr_png, panel_fields
 from services.records import CELL_TYPES, detect_record_type
 
@@ -46,10 +47,15 @@ def view_card(request: Request, record_id: str):
     if not record:
         return HTMLResponse("Record not found.", status_code=404)
 
+    # Materials show their newest COA (top-right chip) to logged-in users only
+    coa = None
+    if record_type == "material" and request.session.get("user_id"):
+        coa = public_coa(latest_coas([record_id]).get(record_id))
+
     return templates.TemplateResponse(
         "card.html",
         {"request": request, "record_id": record_id, "record_type": record_type,
-         "record": record, "chain": chain, "qr_base64": qr_base64}
+         "record": record, "chain": chain, "qr_base64": qr_base64, "coa": coa}
     )
 
 

@@ -97,3 +97,21 @@ CREATE TABLE tbl_cycling_data (
     num_cycles        INTEGER,
     uploaded_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Certificates of Analysis (COA) attached to a material. Several versions can be
+-- kept per material; pages show the newest. Files live in uploads/coa/<material_id>/.
+-- preview_path is a PDF copy used for in-browser preview (the original for PDFs,
+-- a LibreOffice conversion for Word files; NULL if conversion failed).
+CREATE TABLE tbl_material_coa (
+    coa_id          SERIAL PRIMARY KEY,
+    material_id     TEXT NOT NULL REFERENCES tbl_materials(material_id) ON DELETE CASCADE,
+    filename        TEXT NOT NULL,
+    file_kind       TEXT NOT NULL CHECK (file_kind IN ('pdf', 'docx', 'doc')),
+    file_path       TEXT NOT NULL,
+    preview_path    TEXT,
+    size_bytes      INTEGER NOT NULL,
+    sha256          TEXT NOT NULL,
+    uploaded_by     TEXT,
+    uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_material_coa_material ON tbl_material_coa (material_id, uploaded_at DESC);

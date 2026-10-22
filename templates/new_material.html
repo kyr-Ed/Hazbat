@@ -2,8 +2,9 @@
 {% block title %}New Material — BMAC{% endblock %}
 {% block content %}
 {% set f = form or {} %}
+{% import "_coa.html" as coa_ui %}
 <h1>New Material</h1>
-<form method="post" action="/materials/new">
+<form method="post" action="/materials/new" enctype="multipart/form-data">
     <fieldset class="form-section">
         <legend>Required</legend>
         <div class="field">
@@ -46,9 +47,31 @@
         </div>
     </fieldset>
 
+    <fieldset class="form-section">
+        <legend>Certificate of Analysis <span class="optional">optional — .pdf, .docx or .doc, up to 25 MB</span></legend>
+        <label class="coa-drop" data-coa-input-drop>
+            <input type="file" id="coa" name="coa" accept=".pdf,.docx,.doc,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+            <span class="coa-drop-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16"><path d="M4 1.5h5.5L13 5v9.5H4z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8.5 7v5M6.5 9l2-2 2 2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="coa-drop-text" data-coa-drop-text><strong>Drop the supplier COA here</strong> or click to choose a file</span>
+        </label>
+        {% if error and f %}<p class="hint">Files can't be kept after an error — please choose the COA again.</p>{% endif %}
+    </fieldset>
+
     <button type="submit">Create Material</button>
 </form>
 
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 {% if success %}<p class="success">Created {{ success }} successfully.</p>{% endif %}
+{% if coa_warning %}<p class="error">{{ coa_warning }}</p>{% endif %}
+
+{% if created %}
+<h2 class="coa-section-title">New material</h2>
+<p class="hint">{% if created[0].coa %}COA attached — click <strong>COA</strong> on the card to preview it.{% else %}No COA yet — use <strong>+ COA</strong> at the top right of the card, or drop the file onto the card.{% endif %}</p>
+<div class="mat-grid">
+    {% for m in created %}{{ coa_ui.material_card(m) }}{% endfor %}
+</div>
+{% endif %}
+{{ coa_ui.coa_modal() }}
 {% endblock %}

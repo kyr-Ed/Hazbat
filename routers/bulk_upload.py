@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 
 from core.auth import require_login
 from core.templates import templates
+from services.coa import material_summaries
 from services.bulk import (check_cell_row, check_coating_row, check_material_row, check_mlp_row,
                            process_bulk_upload, read_upload)
 
@@ -38,7 +39,9 @@ async def bulk_upload_materials(request: Request, file: UploadFile = File(...)):
     except Exception as e:
         return templates.TemplateResponse("bulk_upload.html", {"request": request, "upload_error": f"Couldn't read that file: {e}"})
     results = process_bulk_upload(rows, "tbl_materials", check=check_material_row)
-    return templates.TemplateResponse("bulk_upload.html", {"request": request, "results": results})
+    # One card per new material, each with its own "+ COA" button (top right)
+    cards = material_summaries(results["success"])
+    return templates.TemplateResponse("bulk_upload.html", {"request": request, "results": results, "cards": cards})
 
 # --- Coatings ----------------------------------------------------------------
 

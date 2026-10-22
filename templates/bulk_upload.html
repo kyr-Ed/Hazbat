@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Bulk Upload Materials — BMAC{% endblock %}
 {% block content %}
+{% import "_coa.html" as coa_ui %}
 <h1>Bulk Upload Materials</h1>
 <p>Upload a CSV or Excel file with a header row.</p>
 <p><strong>Required columns:</strong> <code>material_id</code>, <code>chemistry</code>, <code>supplier</code></p>
@@ -33,4 +34,19 @@
     {% endif %}
 </div>
 {% endif %}
+
+{% if cards %}
+<h2 class="coa-section-title">New materials — attach COAs</h2>
+<p class="hint">Use <strong>+ COA</strong> at the top right of each card, drop a file straight onto a card, or drop several files below.</p>
+<div class="coa-bulk-drop" data-coa-bulk tabindex="0" role="button" aria-label="Choose several COA files">
+    <input type="file" multiple hidden accept=".pdf,.docx,.doc,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+    <strong>Drop several COAs here</strong>
+    <span class="muted small">Files whose name contains the material ID (e.g. <code>{{ cards[0].material_id }}_COA.pdf</code>) are matched to their card automatically.</span>
+    <span class="coa-bulk-status small" data-coa-bulk-status aria-live="polite"></span>
+</div>
+<div class="mat-grid">
+    {% for m in cards %}{{ coa_ui.material_card(m) }}{% endfor %}
+</div>
+{% endif %}
+{{ coa_ui.coa_modal() }}
 {% endblock %}

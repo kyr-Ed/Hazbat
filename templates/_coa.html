@@ -1,0 +1,71 @@
+{#- Certificate of Analysis (COA) pieces shared by new_material.html, bulk_upload.html and card.html.
+    Import with:  {% import "_coa.html" as coa_ui %}
+    Behaviour (upload, drag-and-drop, preview window) is in static/js/coa.js; styles in hazbat.css. -#}
+
+{% macro coa_chip(material_id, coa, on_dark=false) -%}
+<div class="coa-slot{{ ' on-dark' if on_dark }}" data-material-id="{{ material_id }}" data-coa="{{ coa | tojson | forceescape }}">
+    {%- if coa %}
+    <button type="button" class="coa-chip has-coa" title="View COA: {{ coa.filename }}">
+        <svg class="coa-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9.5H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6 9.2l1.6 1.6L11 7.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        COA <span class="coa-kind">{{ 'PDF' if coa.kind == 'pdf' else 'DOC' }}</span>
+    </button>
+    {%- else %}
+    <button type="button" class="coa-chip no-coa" title="Attach a COA (.pdf, .docx or .doc), or drop the file on this card">
+        <span aria-hidden="true">+</span> COA
+    </button>
+    {%- endif %}
+    <input type="file" class="coa-file" accept=".pdf,.docx,.doc,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+</div>
+{%- endmacro %}
+
+
+{% macro material_card(m) -%}
+<article class="mat-card" data-material-card="{{ m.material_id }}">
+    <header class="mat-card-head">
+        <div class="mat-card-title">
+            <span class="mat-card-id mono">{{ m.material_id }}</span>
+            <span class="mat-card-sub">{{ m.chemistry | dash }}</span>
+        </div>
+        {{ coa_chip(m.material_id, m.coa, on_dark=true) }}
+    </header>
+    <div class="mat-card-body">
+        <div class="row"><span class="label">Supplier</span><span class="value">{{ m.supplier | dash }}</span></div>
+        <div class="row"><span class="label">Quantity (kg)</span><span class="value">{{ m.quantity_kg | dash }}</span></div>
+        <div class="row"><span class="label">Date received</span><span class="value">{{ m.date_received | dash }}</span></div>
+        <div class="row"><span class="label">Location</span><span class="value">{{ m.location | dash }}</span></div>
+    </div>
+    <footer class="mat-card-foot">
+        <span class="electrode-tag {{ 'cathode' if m.material_id.startswith('CAT-') else 'anode' }}">{{ 'Cathode' if m.material_id.startswith('CAT-') else 'Anode' }}</span>
+        <a href="/card/{{ m.material_id }}">Open card &rarr;</a>
+    </footer>
+</article>
+{%- endmacro %}
+
+
+{% macro coa_modal() -%}
+<div class="coa-modal" id="coaModal" hidden>
+    <div class="coa-modal-box" role="dialog" aria-modal="true" aria-labelledby="coaModalTitle">
+        <div class="coa-modal-head">
+            <div class="coa-modal-heading">
+                <div class="coa-eyebrow">Certificate of Analysis · <span class="mono" data-coa-material></span></div>
+                <h3 id="coaModalTitle" data-coa-title></h3>
+                <div class="muted small" data-coa-meta></div>
+            </div>
+            <div class="coa-modal-actions">
+                <a class="coa-btn" data-coa-download href="#">Download original</a>
+                <button type="button" class="coa-btn" data-coa-replace>Replace</button>
+                <button type="button" class="coa-btn danger" data-coa-remove>Remove</button>
+                <button type="button" class="node-panel-close" data-coa-close aria-label="Close preview">&times;</button>
+            </div>
+        </div>
+        <div class="coa-modal-body">
+            <iframe data-coa-frame title="COA preview"></iframe>
+            <div class="coa-nopreview" data-coa-nopreview hidden>
+                <p><strong>No in-browser preview for this file.</strong></p>
+                <p class="muted">The Word file couldn't be converted to PDF on the server (LibreOffice may not be installed). Download the original to view it.</p>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="/static/js/coa.js" defer></script>
+{%- endmacro %}

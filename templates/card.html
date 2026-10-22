@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ record_id }} — Card{% endblock %}
 {% block content %}
+{% import "_coa.html" as coa_ui %}
 <div style="max-width: 420px; margin: 0 auto; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.15);">
-    <div style="background: linear-gradient(135deg, #1b3a6b, #2e5fa3); color: white; padding: 24px;">
+    <div style="background: linear-gradient(135deg, #1b3a6b, #2e5fa3); color: white; padding: 24px; position: relative;"{% if record_type == "material" %} data-material-card="{{ record_id }}"{% endif %}>
+        {% if record_type == "material" and request.session.get("user_id") %}
+        <div class="card-coa-corner">{{ coa_ui.coa_chip(record_id, coa, on_dark=true) }}</div>
+        {% endif %}
         <h1 style="margin: 0; font-size: 24px;">{{ record_id }}</h1>
         <p style="margin: 5px 0 0; font-size: 14px; opacity: 0.85;">{{ record_type | capitalize }}</p>
     </div>
@@ -30,6 +34,7 @@
             <div class="card-logo"><img src="/static/img/wmg-black.png" alt="WMG, University of Warwick"></div>
     </div>
 </div>
+{% if record_type == "material" and request.session.get("user_id") %}{{ coa_ui.coa_modal() }}{% endif %}
 <div id="cyclingSection" style="display:none; margin-top: 24px;">
     <div class="result">
         <h4>Cycling Data</h4>

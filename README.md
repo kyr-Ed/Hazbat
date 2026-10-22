@@ -49,6 +49,15 @@ Page for every component showing:
 ### Bulk upload
 CSV or Excel upload for all five record types. Column names are case-insensitive.
 
+### Certificates of Analysis (COA)
+Every material card has a **+ COA** button at the top right, on the New Material page, after a bulk upload and on the material's own card. It takes `.pdf`, `.docx` or `.doc` (up to 25 MB); drop a file on a card, or drop several on the bulk results page and they are matched to cards by the material ID in the file name. Clicking **COA** opens an in-browser preview with download, replace and remove. Word files are converted to PDF for the preview with LibreOffice:
+
+```bash
+sudo apt install --no-install-recommends libreoffice-writer   # Word preview (optional)
+psql "$DATABASE_URL" -f migrations/001_material_coa.sql       # existing databases only
+```
+Files are stored in `uploads/coa/<material_id>/` (git-ignored, include it in backups). COAs need a login to view.
+
 ### Traceability graph
 A full `vis.js` force-directed network of every record and their relationships. Clicking any node highlights its complete upstream (ancestors) and downstream (descendants) path with a pulsing edge animation, and opens a quick-view side panel showing key fields, and QR code.
 

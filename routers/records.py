@@ -6,12 +6,13 @@ that take query parameters; the website itself uses the /new forms.
 Templates: new_material.html, new_coating.html, new_slp.html, new_coincell.html, new_mlp.html.
 """
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
 from core.auth import require_login
 from core.db import get_connection
 from core.templates import templates
+from services.coa import CoaError, MAX_COA_BYTES, detect_kind, material_summaries, save_coa
 from services.forms import clean_optional_fields, coating_electrode, form_state, insert_record, load_form_options, record_exists
 
 router = APIRouter()
@@ -31,8 +32,10 @@ def new_material_form(request: Request):
 @router.post("/materials/new", response_class=HTMLResponse)
 def submit_material_form(request: Request, material_id: str = Form(...), chemistry: str = Form(...), supplier: str = Form(...),
                          date_received: str = Form(None), quantity_kg: str = Form(None), location: str = Form(None),
-                         availability: str = Form(None), notes: str = Form(None)):
-    """Check and save a new material (ID must be uppercase and start with CAT- or AN-)."""
+                         availability: str = Form(None), notes: str = Form(None),
+                         coa: UploadFile = File(None)):
+    """Check and save a new material (ID must be uppercase and start with CAT- or AN-).
+    An optional COA (.pdf/.docx/.doc) is checked first and attached once the material exists."""
     redirect = require_login(request)
     if redirect:
         return redirect
@@ -44,7 +47,17 @@ def submit_material_form(request: Request, material_id: str = Form(...), chemist
     success = None
 
     material_id = required["material_id"]
-    if not all(required.values()):
+    coa_data = coa.file.read(MAX_COA_BYTES + 1) if coa and coa.filename else None
+    coa_problem = coa_warning = created = None
+    if coa_data is not None:
+        try:
+            detect_kind(coa.filename, coa_data)       # reject a bad COA before saving anything
+        except CoaError as e:
+            coa_problem = str(e)
+
+    if coa_problem:
+        error = f"COA not accepted: {coa_problem} Nothing was saved."
+    elif not all(required.values()):
         error = "Material ID, chemistry and supplier are required."
     elif material_id != material_id.upper():
         error = f"Material ID must be uppercase. Try: {material_id.upper()}"
@@ -56,8 +69,15 @@ def submit_material_form(request: Request, material_id: str = Form(...), chemist
             error = insert_record("tbl_materials", {**required, **extras})
         if not error:
             success, form = material_id, {}
+            if coa_data is not None:
+                try:
+                    save_coa(material_id, coa.filename, coa_data, request.session.get("full_name"))
+                except CoaError as e:
+                    coa_warning = f"Material saved, but the COA wasn't: {e}"
+            created = material_summaries([material_id])
 
-    return templates.TemplateResponse("new_material.html", {"request": request, "error": error, "success": success, "form": form})
+    return templates.TemplateResponse("new_material.html", {"request": request, "error": error, "success": success,
+                                                            "form": form, "created": created, "coa_warning": coa_warning})
 
 @router.post("/materials")
 def create_material(material_id: str, chemistry: str, supplier: str):
